@@ -17,6 +17,8 @@ the scan cache.
 Before a URL is eligible for repair, its supplied 40-character legacy hash must match the referenced
 document ID using the owning project's legacy salt. A mismatched ID/hash pair is retained unchanged
 and reported for review; the module never creates a new URL merely because a document ID exists.
+The referenced e-document must also belong to the project containing the URL; cross-project links are
+reported for review and are never repaired.
 
 The module scans data dictionary content (development projects, or only `redcap_metadata_temp` while
 a production project is in Draft Mode), surveys, pending survey invitations, alerts, reports,

@@ -638,6 +638,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if ($document === false) {
             return ['state' => 'issue', 'reason' => 'The referenced document no longer exists'];
         }
+        if ((int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)) {
+            return ['state' => 'issue', 'reason' => 'The referenced document belongs to a different project'];
+        }
 
         $currentHash = \Files::docIdHash($docId, $document['__SALT__']);
         $legacyHash = \Files::docIdHashLegacy($docId, $document['__SALT__']);
