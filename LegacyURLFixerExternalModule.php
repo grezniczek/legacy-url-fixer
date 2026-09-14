@@ -17,6 +17,22 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
+    private const DATA_DICTIONARY_COLUMNS = [
+        'form_menu_description', 'element_preceding_header', 'element_label',
+        'element_enum', 'element_note', 'question_num',
+    ];
+    private const SURVEY_COLUMNS = [
+        'title', 'instructions', 'offline_instructions', 'acknowledgement',
+        'stop_action_acknowledgement', 'confirmation_email_content',
+        'repeat_survey_btn_text', 'response_limit_custom_text',
+        'survey_btn_text_prev_page', 'survey_btn_text_next_page', 'survey_btn_text_submit',
+    ];
+    private const ALERT_COLUMNS = ['alert_message', 'sendgrid_template_data'];
+    private const REPORT_COLUMNS = ['title', 'description'];
+    private const PROJECT_DASHBOARD_COLUMNS = ['title', 'body'];
+    private const RECORD_DASHBOARD_COLUMNS = ['title', 'description'];
+    private const DESCRIPTIVE_POPUP_COLUMNS = ['inline_text', 'inline_text_popup_description'];
+    private const ECONSENT_COLUMNS = ['custom_econsent_label', 'notes'];
 
     /**
      * Matches absolute image/file URLs, including survey passthru URLs.
@@ -30,6 +46,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
     /** @var array<string, array<string, string>|false> */
     private array $documentCache = [];
+
+    /** @var array<string, array<string, bool>|false> */
+    private array $tableColumnsCache = [];
 
     /**
      * Processes authenticated, CSRF-protected requests made through the
@@ -179,27 +198,16 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'message' => null,
             'project_ids' => [],
         ];
-        $columns = $this->getColumns($surface['table']);
-        if ($columns === []) {
+        $resolved = $this->resolveSurface($surface);
+        if ($resolved['surface'] === null) {
             $scan['status'] = 'unavailable';
-            $scan['message'] = 'The table is not available in this REDCap schema.';
+            $scan['message'] = $resolved['reason'];
             return $this->cacheControlCenterScan($scan, $surface);
         }
 
-        $primaryKeys = $this->getPrimaryKeys($columns);
-        $textColumns = $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? []));
-        if ($textColumns === []) {
-            $scan['status'] = 'unavailable';
-            $scan['message'] = 'The table has no scanable text columns.';
-            return $this->cacheControlCenterScan($scan, $surface);
-        }
-
-        $scope = $this->getControlCenterScopeClause($surface, $columns);
-        if ($scope === null) {
-            $scan['status'] = 'unavailable';
-            $scan['message'] = 'The required project relationship is not available in this REDCap schema.';
-            return $this->cacheControlCenterScan($scan, $surface);
-        }
+        $surface = $resolved['surface'];
+        $textColumns = $surface['columns'];
+        $scope = $this->getControlCenterScopeClause($surface);
 
         $candidateWhere = $this->getCandidateWhereClause($textColumns, 't');
         $selectColumns = ['p.`project_id` AS `control_center_project_id`'];
@@ -313,24 +321,16 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private function scanSurface(array $surface, array $project, array &$scan): void
     {
         $projectId = (int) $project['project_id'];
-        $columns = $this->getColumns($surface['table']);
-        if ($columns === []) {
-            $scan['stats']['skipped_surfaces'][] = $surface['label'] . ' (table not available)';
+        $resolved = $this->resolveSurface($surface);
+        if ($resolved['surface'] === null) {
+            $scan['stats']['skipped_surfaces'][] = $surface['label'] . ' (' . $resolved['reason'] . ')';
             return;
         }
 
-        $primaryKeys = $this->getPrimaryKeys($columns);
-        $textColumns = $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? []));
-        if ($primaryKeys === [] || $textColumns === []) {
-            $scan['stats']['skipped_surfaces'][] = $surface['label'] . ' (no usable primary key or text columns)';
-            return;
-        }
-
-        $scope = $this->getScopeClause($surface, $columns, 't', $projectId);
-        if ($scope === null) {
-            $scan['stats']['skipped_surfaces'][] = $surface['label'] . ' (not available in this REDCap schema)';
-            return;
-        }
+        $surface = $resolved['surface'];
+        $primaryKeys = $surface['keys'];
+        $textColumns = $surface['columns'];
+        $scope = $this->getScopeClause($surface, 't', $projectId);
 
         $scan['stats']['scanned_columns'][] = [
             'label' => $surface['label'],
@@ -478,78 +478,104 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         ];
     }
 
-    /**
-     * The dynamic identifiers in this method have been validated by
-     * identifier(). Psalm cannot retain that fact across the schema lookup.
-     *
-     * @psalm-suppress TaintedSql
-     */
     private function applyItem(array $surface, array $item, array $project): array
     {
-        $columns = $this->getColumns($surface['table']);
-        $primaryKeys = $this->getPrimaryKeys($columns);
-        $column = $item['column'];
-        if (!in_array($column, $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? [])), true)
-            || array_keys($item['keys']) !== $primaryKeys
+        $resolved = $this->resolveSurface($surface);
+        if ($resolved['surface'] === null) {
+            return $this->outcome($item, 'skipped-schema-changed');
+        }
+
+        $surface = $resolved['surface'];
+        $column = $this->getCachedSurfaceColumn($surface, $item);
+        $keys = $item['keys'] ?? null;
+        if ($column === null
+            || !is_array($keys)
+            || !$this->hasExpectedKeys($surface, $keys)
+            || !is_string($item['checksum'] ?? null)
         ) {
             return $this->outcome($item, 'skipped-schema-changed');
         }
 
-        $scope = $this->getScopeClause($surface, $columns, '', (int) $project['project_id']);
-        if ($scope === null) {
-            return $this->outcome($item, 'skipped-surface-unavailable');
-        }
-
-        $keyWhere = [];
-        $keyParameters = [];
-        foreach ($primaryKeys as $key) {
-            $keyWhere[] = $this->identifier($key) . ' = ?';
-            $keyParameters[] = $item['keys'][$key];
-        }
+        $scope = $this->getScopeClause($surface, '', (int) $project['project_id']);
+        $keyClause = $this->getKeyWhereClause($surface, $keys);
 
         $selectSql = 'SELECT ' . $this->identifier($column)
             . ' FROM ' . $this->identifier($surface['table'])
-            . ' WHERE ' . implode(' AND ', $keyWhere)
+            . ' WHERE ' . $keyClause['sql']
             . ' AND (' . $scope['sql'] . ')';
-        $row = $this->query($selectSql, array_merge($keyParameters, $scope['params']))->fetch_assoc();
-        if ($row === null || $row === false) {
-            return $this->outcome($item, 'skipped-row-missing');
-        }
+        $requiresUniqueLocator = ($surface['require_unique_locator'] ?? false) === true;
+        $transactionStarted = false;
+        $rollback = function () use (&$transactionStarted): void {
+            if ($transactionStarted) {
+                $transactionStarted = false;
+                $this->query('ROLLBACK', []);
+            }
+        };
 
-        $oldValue = $row[$column];
-        if (!is_string($oldValue) || !hash_equals($item['checksum'], hash('sha256', $oldValue))) {
-            return $this->outcome($item, 'skipped-changed');
-        }
+        try {
+            if ($requiresUniqueLocator) {
+                $this->query('START TRANSACTION', []);
+                $transactionStarted = true;
+            }
+            $result = $this->query(
+                $selectSql . ($requiresUniqueLocator ? ' FOR UPDATE' : ''),
+                array_merge($keyClause['params'], $scope['params'])
+            );
+            $row = $result->fetch_assoc();
+            if ($row === null || $row === false) {
+                $rollback();
+                return $this->outcome($item, 'skipped-row-missing');
+            }
+            $secondRow = $requiresUniqueLocator ? $result->fetch_assoc() : null;
+            if ($secondRow !== null && $secondRow !== false) {
+                $rollback();
+                return $this->outcome($item, 'skipped-row-not-unique');
+            }
 
-        $upgraded = $this->upgradeText($oldValue, $project);
-        if ($upgraded['changed'] === 0) {
-            return $this->outcome($item, 'skipped-no-longer-needed');
-        }
+            $oldValue = $row[$column];
+            if (!is_string($oldValue) || !hash_equals($item['checksum'], hash('sha256', $oldValue))) {
+                $rollback();
+                return $this->outcome($item, 'skipped-changed');
+            }
 
-        $set = [$this->identifier($column) . ' = ?'];
-        $parameters = [$upgraded['value']];
-        if (($surface['reset_hash'] ?? false) && isset($columns['hash'])) {
-            $set[] = $this->identifier('hash') . " = 'NoHash'";
-        }
-        if (($surface['reset_dashboard_cache'] ?? false)
-            && isset($columns['cache_time'], $columns['cache_content'])) {
-            $set[] = $this->identifier('cache_time') . ' = NULL';
-            $set[] = $this->identifier('cache_content') . ' = NULL';
-        }
+            $upgraded = $this->upgradeText($oldValue, $project);
+            if ($upgraded['changed'] === 0) {
+                $rollback();
+                return $this->outcome($item, 'skipped-no-longer-needed');
+            }
 
-        $updateSql = 'UPDATE ' . $this->identifier($surface['table'])
-            . ' SET ' . implode(', ', $set)
-            . ' WHERE ' . implode(' AND ', $keyWhere)
-            . ' AND ' . $this->identifier($column) . ' = ?'
-            . ' AND (' . $scope['sql'] . ')';
-        $update = $this->createQuery();
-        $update->add($updateSql, array_merge($parameters, $keyParameters, [$oldValue], $scope['params']));
-        $update->execute();
-        if ($update->affected_rows !== 1) {
-            return $this->outcome($item, 'skipped-changed');
-        }
+            $set = [$this->identifier($column) . ' = ?'];
+            $parameters = [$upgraded['value']];
+            if (($surface['reset_hash'] ?? false) === true) {
+                $set[] = $this->identifier('hash') . " = 'NoHash'";
+            }
+            if (($surface['reset_dashboard_cache'] ?? false) === true) {
+                $set[] = $this->identifier('cache_time') . ' = NULL';
+                $set[] = $this->identifier('cache_content') . ' = NULL';
+            }
 
-        return $this->outcome($item, 'updated');
+            $updateSql = 'UPDATE ' . $this->identifier($surface['table'])
+                . ' SET ' . implode(', ', $set)
+                . ' WHERE ' . $keyClause['sql']
+                . ' AND ' . $this->identifier($column) . ' = ?'
+                . ' AND (' . $scope['sql'] . ')';
+            $update = $this->createQuery();
+            $update->add($updateSql, array_merge($parameters, $keyClause['params'], [$oldValue], $scope['params']));
+            $update->execute();
+            if ($update->affected_rows !== 1) {
+                $rollback();
+                return $this->outcome($item, 'skipped-changed');
+            }
+
+            if ($transactionStarted) {
+                $this->query('COMMIT', []);
+                $transactionStarted = false;
+            }
+            return $this->outcome($item, 'updated');
+        } catch (\Throwable $exception) {
+            $rollback();
+            throw $exception;
+        }
     }
 
     private function outcome(array $item, string $result, ?string $detail = null): array
@@ -700,28 +726,24 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         return $this->documentCache[$documentKey];
     }
 
-    /**
-     * Fixed table registry. Text columns are discovered at runtime so the
-     * module remains compatible with minor schema additions between versions.
-     */
+    /** Fixed registry of authored, HTML-capable project content. */
     private function getScanSurfaces(array $project): array
     {
         $metadataTable = $this->getActiveMetadataTable($project);
         $multilanguageSuffix = $metadataTable === 'redcap_metadata_temp' ? '_temp' : '';
         $surfaces = [
-            ['id' => 'surveys', 'label' => 'Survey settings', 'table' => 'redcap_surveys', 'scope' => 'direct'],
-            ['id' => 'automated-invitations', 'label' => 'Automated survey invitations', 'table' => 'redcap_surveys_scheduler', 'scope' => 'survey'],
-            ['id' => 'pending-survey-emails', 'label' => 'Pending survey invitations', 'table' => 'redcap_surveys_emails', 'scope' => 'survey', 'pending_only' => true],
-            ['id' => 'alerts', 'label' => 'Alerts & Notifications', 'table' => 'redcap_alerts', 'scope' => 'direct'],
-            ['id' => 'reports', 'label' => 'Reports', 'table' => 'redcap_reports', 'scope' => 'direct'],
-            ['id' => 'project-dashboards', 'label' => 'Project dashboards', 'table' => 'redcap_project_dashboards', 'scope' => 'direct', 'reset_dashboard_cache' => true, 'exclude' => ['cache_content']],
-            ['id' => 'record-dashboards', 'label' => 'Record status dashboards', 'table' => 'redcap_record_dashboards', 'scope' => 'direct'],
-            ['id' => 'descriptive-popups', 'label' => 'Descriptive popups', 'table' => 'redcap_descriptive_popups', 'scope' => 'direct'],
-            ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'scope' => 'direct'],
-            ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
-            ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
-            ['id' => 'multilanguage-metadata', 'label' => 'Multi-Language metadata', 'table' => 'redcap_multilanguage_metadata' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
-            ['id' => 'multilanguage-ui', 'label' => 'Multi-Language UI text', 'table' => 'redcap_multilanguage_ui' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
+            ['id' => 'surveys', 'label' => 'Survey settings', 'table' => 'redcap_surveys', 'keys' => ['survey_id'], 'columns' => self::SURVEY_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'automated-invitations', 'label' => 'Automated survey invitations', 'table' => 'redcap_surveys_scheduler', 'keys' => ['ss_id'], 'columns' => ['email_content'], 'scope' => 'survey'],
+            ['id' => 'pending-survey-emails', 'label' => 'Pending survey invitations', 'table' => 'redcap_surveys_emails', 'keys' => ['email_id'], 'columns' => ['email_content'], 'scope' => 'survey', 'pending_only' => true],
+            ['id' => 'alerts', 'label' => 'Alerts & Notifications', 'table' => 'redcap_alerts', 'keys' => ['alert_id'], 'columns' => self::ALERT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'reports', 'label' => 'Reports', 'table' => 'redcap_reports', 'keys' => ['report_id'], 'columns' => self::REPORT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'project-dashboards', 'label' => 'Project dashboards', 'table' => 'redcap_project_dashboards', 'keys' => ['dash_id'], 'columns' => self::PROJECT_DASHBOARD_COLUMNS, 'scope' => 'direct', 'reset_dashboard_cache' => true],
+            ['id' => 'record-dashboards', 'label' => 'Record status dashboards', 'table' => 'redcap_record_dashboards', 'keys' => ['rd_id'], 'columns' => self::RECORD_DASHBOARD_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'descriptive-popups', 'label' => 'Descriptive popups', 'table' => 'redcap_descriptive_popups', 'keys' => ['popup_id'], 'columns' => self::DESCRIPTIVE_POPUP_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'keys' => ['consent_id'], 'columns' => self::ECONSENT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'keys' => ['consent_form_id'], 'columns' => ['consent_form_richtext'], 'scope' => 'econsent'],
+            ['id' => 'multilanguage-metadata', 'label' => 'Multi-Language metadata', 'table' => 'redcap_multilanguage_metadata' . $multilanguageSuffix, 'keys' => ['project_id', 'lang_id', 'type', 'name', 'index'], 'columns' => ['value'], 'scope' => 'direct', 'reset_hash' => true, 'require_unique_locator' => true],
+            ['id' => 'multilanguage-ui', 'label' => 'Multi-Language UI text', 'table' => 'redcap_multilanguage_ui' . $multilanguageSuffix, 'keys' => ['project_id', 'lang_id', 'item'], 'columns' => ['translation'], 'scope' => 'direct', 'reset_hash' => true, 'require_unique_locator' => true],
         ];
 
         if ($metadataTable !== null) {
@@ -729,6 +751,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'active-metadata',
                 'label' => $metadataTable === 'redcap_metadata_temp' ? 'Draft data dictionary' : 'Data dictionary',
                 'table' => $metadataTable,
+                'keys' => ['project_id', 'field_name'],
+                'columns' => self::DATA_DICTIONARY_COLUMNS,
                 'scope' => 'direct',
             ]);
         }
@@ -747,6 +771,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'data-dictionary-active',
                 'label' => 'Data dictionary (active table)',
                 'table' => 'redcap_metadata',
+                'keys' => ['project_id', 'field_name'],
+                'columns' => self::DATA_DICTIONARY_COLUMNS,
                 'scope' => 'direct',
                 // This is read-only. Production repairs are still restricted
                 // to redcap_metadata_temp while a project is in Draft Mode.
@@ -756,24 +782,27 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'data-dictionary-draft',
                 'label' => 'Draft data dictionary (non-development projects in Draft Mode)',
                 'table' => 'redcap_metadata_temp',
+                'keys' => ['project_id', 'field_name'],
+                'columns' => self::DATA_DICTIONARY_COLUMNS,
                 'scope' => 'direct',
                 'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
             ],
-            ['id' => 'surveys', 'label' => 'Survey settings', 'table' => 'redcap_surveys', 'scope' => 'direct'],
-            ['id' => 'automated-invitations', 'label' => 'Automated survey invitations', 'table' => 'redcap_surveys_scheduler', 'scope' => 'survey'],
-            ['id' => 'pending-survey-emails', 'label' => 'Pending survey invitations', 'table' => 'redcap_surveys_emails', 'scope' => 'survey', 'pending_only' => true],
-            ['id' => 'alerts', 'label' => 'Alerts & Notifications', 'table' => 'redcap_alerts', 'scope' => 'direct'],
-            ['id' => 'reports', 'label' => 'Reports', 'table' => 'redcap_reports', 'scope' => 'direct'],
-            ['id' => 'project-dashboards', 'label' => 'Project dashboards', 'table' => 'redcap_project_dashboards', 'scope' => 'direct', 'exclude' => ['cache_content']],
-            ['id' => 'record-dashboards', 'label' => 'Record status dashboards', 'table' => 'redcap_record_dashboards', 'scope' => 'direct'],
-            ['id' => 'descriptive-popups', 'label' => 'Descriptive popups', 'table' => 'redcap_descriptive_popups', 'scope' => 'direct'],
-            ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'scope' => 'direct'],
-            ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
-            ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
+            ['id' => 'surveys', 'label' => 'Survey settings', 'table' => 'redcap_surveys', 'keys' => ['survey_id'], 'columns' => self::SURVEY_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'automated-invitations', 'label' => 'Automated survey invitations', 'table' => 'redcap_surveys_scheduler', 'keys' => ['ss_id'], 'columns' => ['email_content'], 'scope' => 'survey'],
+            ['id' => 'pending-survey-emails', 'label' => 'Pending survey invitations', 'table' => 'redcap_surveys_emails', 'keys' => ['email_id'], 'columns' => ['email_content'], 'scope' => 'survey', 'pending_only' => true],
+            ['id' => 'alerts', 'label' => 'Alerts & Notifications', 'table' => 'redcap_alerts', 'keys' => ['alert_id'], 'columns' => self::ALERT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'reports', 'label' => 'Reports', 'table' => 'redcap_reports', 'keys' => ['report_id'], 'columns' => self::REPORT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'project-dashboards', 'label' => 'Project dashboards', 'table' => 'redcap_project_dashboards', 'keys' => ['dash_id'], 'columns' => self::PROJECT_DASHBOARD_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'record-dashboards', 'label' => 'Record status dashboards', 'table' => 'redcap_record_dashboards', 'keys' => ['rd_id'], 'columns' => self::RECORD_DASHBOARD_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'descriptive-popups', 'label' => 'Descriptive popups', 'table' => 'redcap_descriptive_popups', 'keys' => ['popup_id'], 'columns' => self::DESCRIPTIVE_POPUP_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'keys' => ['consent_id'], 'columns' => self::ECONSENT_COLUMNS, 'scope' => 'direct'],
+            ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'keys' => ['consent_form_id'], 'columns' => ['consent_form_richtext'], 'scope' => 'econsent'],
             [
                 'id' => 'multilanguage-metadata-live',
                 'label' => 'Multi-Language metadata (active table)',
                 'table' => 'redcap_multilanguage_metadata',
+                'keys' => ['project_id', 'lang_id', 'type', 'name', 'index'],
+                'columns' => ['value'],
                 'scope' => 'direct',
                 'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
             ],
@@ -781,6 +810,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'multilanguage-metadata-draft',
                 'label' => 'Multi-Language metadata (Draft Mode)',
                 'table' => 'redcap_multilanguage_metadata_temp',
+                'keys' => ['project_id', 'lang_id', 'type', 'name', 'index'],
+                'columns' => ['value'],
                 'scope' => 'direct',
                 'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
             ],
@@ -788,6 +819,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'multilanguage-ui-live',
                 'label' => 'Multi-Language UI text (active table)',
                 'table' => 'redcap_multilanguage_ui',
+                'keys' => ['project_id', 'lang_id', 'item'],
+                'columns' => ['translation'],
                 'scope' => 'direct',
                 'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
             ],
@@ -795,6 +828,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'multilanguage-ui-draft',
                 'label' => 'Multi-Language UI text (Draft Mode)',
                 'table' => 'redcap_multilanguage_ui_temp',
+                'keys' => ['project_id', 'lang_id', 'item'],
+                'columns' => ['translation'],
                 'scope' => 'direct',
                 'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
             ],
@@ -812,47 +847,35 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         return (int) $project['draft_mode'] === 1 ? 'redcap_metadata_temp' : null;
     }
 
-    private function getScopeClause(array $surface, array $columns, string $alias, int $projectId): ?array
+    private function getScopeClause(array $surface, string $alias, int $projectId): array
     {
         $prefix = $alias === '' ? '' : $alias . '.';
         if ($surface['scope'] === 'direct') {
-            if (!isset($columns['project_id'])) {
-                return null;
-            }
             return ['sql' => $prefix . $this->identifier('project_id') . ' = ?', 'params' => [$projectId]];
         }
         if ($surface['scope'] === 'survey') {
-            if (!isset($columns['survey_id'])) {
-                return null;
-            }
             $sql = 'EXISTS (SELECT 1 FROM redcap_surveys s WHERE s.`survey_id` = '
                 . $prefix . $this->identifier('survey_id') . ' AND s.`project_id` = ?)';
             if (($surface['pending_only'] ?? false) === true) {
-                if (!isset($columns['email_sent'])) {
-                    return null;
-                }
                 $sql .= ' AND ' . $prefix . $this->identifier('email_sent') . ' IS NULL';
             }
             return ['sql' => $sql, 'params' => [$projectId]];
         }
         if ($surface['scope'] === 'econsent') {
-            if (!isset($columns['consent_id'])) {
-                return null;
-            }
             return [
                 'sql' => 'EXISTS (SELECT 1 FROM redcap_econsent c WHERE c.`consent_id` = '
                     . $prefix . $this->identifier('consent_id') . ' AND c.`project_id` = ?)',
                 'params' => [$projectId],
             ];
         }
-        return null;
+        throw new \LogicException('Unsupported scan surface scope.');
     }
 
     /**
      * Joins a physical surface to non-deleted projects for a system-wide scan.
      * Every SQL fragment originates in the fixed Control Center registry.
      */
-    private function getControlCenterScopeClause(array $surface, array $columns): ?array
+    private function getControlCenterScopeClause(array $surface): array
     {
         $projectWhere = 'p.`date_deleted` IS NULL';
         if (isset($surface['project_filter'])) {
@@ -860,23 +883,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         if ($surface['scope'] === 'direct') {
-            if (!isset($columns['project_id'])) {
-                return null;
-            }
             return [
                 'join' => ' INNER JOIN redcap_projects p ON p.`project_id` = t.`project_id`',
                 'sql' => $projectWhere,
             ];
         }
         if ($surface['scope'] === 'survey') {
-            if (!isset($columns['survey_id'])) {
-                return null;
-            }
             $sql = $projectWhere;
             if (($surface['pending_only'] ?? false) === true) {
-                if (!isset($columns['email_sent'])) {
-                    return null;
-                }
                 $sql .= ' AND t.`email_sent` IS NULL';
             }
             return [
@@ -886,16 +900,13 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             ];
         }
         if ($surface['scope'] === 'econsent') {
-            if (!isset($columns['consent_id'])) {
-                return null;
-            }
             return [
                 'join' => ' INNER JOIN redcap_econsent c ON c.`consent_id` = t.`consent_id`'
                     . ' INNER JOIN redcap_projects p ON p.`project_id` = c.`project_id`',
                 'sql' => $projectWhere,
             ];
         }
-        return null;
+        throw new \LogicException('Unsupported scan surface scope.');
     }
 
     private function getCandidateWhereClause(array $columns, string $alias): array
@@ -934,55 +945,132 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     }
 
     /**
-     * @return array<string, array<string, string>>
-     * @psalm-suppress TaintedSql
+     * The table, row keys, and candidate content columns are static. Schema
+     * inspection is used only to select existing names from that fixed list.
+     * Database-supplied names never become SQL identifiers.
      *
-     * $table comes from the fixed surface registry. It is additionally checked
-     * by identifier() immediately before it is interpolated into SHOW COLUMNS.
+     * @return array{surface: array<string, mixed>|null, reason: string}
      */
-    private function getColumns(string $table): array
+    private function resolveSurface(array $surface): array
     {
+        $knownColumns = array_values(array_unique(array_merge(
+            $surface['keys'],
+            $surface['columns'],
+            $this->getScopeColumns($surface),
+            ['hash', 'cache_time', 'cache_content']
+        )));
+        $available = $this->getAvailableColumns($surface['table'], $knownColumns);
+        if ($available === null) {
+            return ['surface' => null, 'reason' => 'table not available'];
+        }
+
+        foreach (array_merge($surface['keys'], $this->getScopeColumns($surface)) as $column) {
+            if (!isset($available[$column])) {
+                return ['surface' => null, 'reason' => 'required column ' . $column . ' is not available'];
+            }
+        }
+
+        $columns = [];
+        foreach ($surface['columns'] as $column) {
+            if (isset($available[$column])) {
+                $columns[] = $column;
+            }
+        }
+        if ($columns === []) {
+            return ['surface' => null, 'reason' => 'none of its configured content columns are available'];
+        }
+
+        $surface['columns'] = $columns;
+        $surface['reset_hash'] = ($surface['reset_hash'] ?? false) === true && isset($available['hash']);
+        $surface['reset_dashboard_cache'] = ($surface['reset_dashboard_cache'] ?? false) === true
+            && isset($available['cache_time'], $available['cache_content']);
+        return ['surface' => $surface, 'reason' => ''];
+    }
+
+    /** @return array<int, string> */
+    private function getScopeColumns(array $surface): array
+    {
+        if ($surface['scope'] === 'direct') {
+            return ['project_id'];
+        }
+        if ($surface['scope'] === 'survey') {
+            return ($surface['pending_only'] ?? false) === true ? ['survey_id', 'email_sent'] : ['survey_id'];
+        }
+        if ($surface['scope'] === 'econsent') {
+            return ['consent_id'];
+        }
+        throw new \LogicException('Unsupported scan surface scope.');
+    }
+
+    /** @return array<string, bool>|null */
+    private function getAvailableColumns(string $table, array $knownColumns): ?array
+    {
+        if (array_key_exists($table, $this->tableColumnsCache)) {
+            $cached = $this->tableColumnsCache[$table];
+            return $cached === false ? null : $cached;
+        }
+
         $exists = $this->query(
             'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
             [$table]
         )->fetch_assoc();
         if ($exists === null || $exists === false) {
-            return [];
+            $this->tableColumnsCache[$table] = false;
+            return null;
         }
 
-        $columns = [];
-        $result = $this->query('SHOW COLUMNS FROM ' . $this->identifier($table), []);
-        while ($column = $result->fetch_assoc()) {
-            $columns[$column['Field']] = $column;
+        $placeholders = implode(', ', array_fill(0, count($knownColumns), '?'));
+        $result = $this->query(
+            'SELECT column_name FROM information_schema.columns'
+                . ' WHERE table_schema = DATABASE() AND table_name = ?'
+                . ' AND column_name IN (' . $placeholders . ')',
+            array_merge([$table], $knownColumns)
+        );
+        $available = [];
+        while ($row = $result->fetch_assoc()) {
+            $name = $row['column_name'] ?? null;
+            if (is_string($name)) {
+                $available[$name] = true;
+            }
         }
-        return $columns;
+        $this->tableColumnsCache[$table] = $available;
+        return $available;
     }
 
-    /** @param array<string, array<string, string>> $columns */
-    private function getPrimaryKeys(array $columns): array
+    private function getCachedSurfaceColumn(array $surface, array $item): ?string
     {
-        $keys = [];
-        foreach ($columns as $name => $column) {
-            if (($column['Key'] ?? '') === 'PRI') {
-                $keys[] = $name;
+        $cachedColumn = $item['column'] ?? null;
+        if (!is_string($cachedColumn)) {
+            return null;
+        }
+        foreach ($surface['columns'] as $column) {
+            if (hash_equals($column, $cachedColumn)) {
+                return $column;
             }
         }
-        return $keys;
+        return null;
     }
 
-    /** @param array<string, array<string, string>> $columns */
-    private function getTextColumns(array $columns, array $excluded): array
+    private function hasExpectedKeys(array $surface, $keys): bool
     {
-        $textColumns = [];
-        foreach ($columns as $name => $column) {
-            if (in_array($name, $excluded, true)) {
-                continue;
-            }
-            if (preg_match('/^(?:tiny|medium|long)?text|^(?:var)?char|^json/i', $column['Type'] ?? '')) {
-                $textColumns[] = $name;
+        return is_array($keys) && array_keys($keys) === $surface['keys'];
+    }
+
+    /** @return array{sql: string, params: array<int, mixed>} */
+    private function getKeyWhereClause(array $surface, array $keys, string $alias = ''): array
+    {
+        $prefix = $alias === '' ? '' : $alias . '.';
+        $conditions = [];
+        $parameters = [];
+        foreach ($surface['keys'] as $key) {
+            if ($keys[$key] === null) {
+                $conditions[] = $prefix . $this->identifier($key) . ' IS NULL';
+            } else {
+                $conditions[] = $prefix . $this->identifier($key) . ' = ?';
+                $parameters[] = $keys[$key];
             }
         }
-        return $textColumns;
+        return ['sql' => implode(' AND ', $conditions), 'params' => $parameters];
     }
 
     private function getProject(int $projectId): ?array
@@ -1096,36 +1184,38 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
      */
     private function getDetailItemSource(array $surface, array $item, array $project): array
     {
-        $columns = $this->getColumns($surface['table']);
-        $primaryKeys = $this->getPrimaryKeys($columns);
-        $column = $item['column'] ?? null;
-        if (!is_string($column)
-            || !is_array($item['keys'] ?? null)
+        $resolved = $this->resolveSurface($surface);
+        if ($resolved['surface'] === null) {
+            return ['reason' => 'The table schema is no longer available for this scan.'];
+        }
+
+        $surface = $resolved['surface'];
+        $column = $this->getCachedSurfaceColumn($surface, $item);
+        $keys = $item['keys'] ?? null;
+        if ($column === null
+            || !is_array($keys)
+            || !$this->hasExpectedKeys($surface, $keys)
             || !is_string($item['checksum'] ?? null)
-            || !in_array($column, $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? [])), true)
-            || array_keys($item['keys']) !== $primaryKeys
         ) {
             return ['reason' => 'The table schema or row identifier changed after the scan.'];
         }
 
-        $scope = $this->getScopeClause($surface, $columns, '', (int) $project['project_id']);
-        if ($scope === null) {
-            return ['reason' => 'The scanned surface is no longer available for this project.'];
-        }
-
-        $keyWhere = [];
-        $keyParameters = [];
-        foreach ($primaryKeys as $key) {
-            $keyWhere[] = $this->identifier($key) . ' = ?';
-            $keyParameters[] = $item['keys'][$key];
-        }
+        $scope = $this->getScopeClause($surface, '', (int) $project['project_id']);
+        $keyClause = $this->getKeyWhereClause($surface, $keys);
         $sql = 'SELECT ' . $this->identifier($column)
             . ' FROM ' . $this->identifier($surface['table'])
-            . ' WHERE ' . implode(' AND ', $keyWhere)
+            . ' WHERE ' . $keyClause['sql']
             . ' AND (' . $scope['sql'] . ')';
-        $row = $this->query($sql, array_merge($keyParameters, $scope['params']))->fetch_assoc();
+        $result = $this->query($sql, array_merge($keyClause['params'], $scope['params']));
+        $row = $result->fetch_assoc();
         if ($row === null || $row === false) {
             return ['reason' => 'The scanned row no longer exists.'];
+        }
+        if (($surface['require_unique_locator'] ?? false) === true) {
+            $secondRow = $result->fetch_assoc();
+            if ($secondRow !== null && $secondRow !== false) {
+                return ['reason' => 'The scanned row locator is no longer unique.'];
+            }
         }
 
         $value = $row[$column] ?? null;
@@ -1258,9 +1348,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     }
 
     /**
-     * Identifiers originate only from the fixed registry or SHOW COLUMNS.
-     * A narrow grammar is sufficient for all supported REDCap table/column
-     * names and makes dynamic identifier construction injection-safe.
+     * Identifiers originate only from the fixed registry. A narrow grammar is
+     * sufficient for all supported REDCap table/column names and makes dynamic
+     * identifier construction injection-safe.
      */
     private function identifier(string $identifier): string
     {
