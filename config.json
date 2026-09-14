@@ -1,7 +1,7 @@
 {
 	"name": "Legacy URL Fixer",
 	"namespace": "DE\\RUB\\SEG\\LegacyURLFixerExternalModule",
-	"description": "Fixes legacy URLs in REDCap metadata.",
+	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration.",
 	"documentation": "README.md",
 	"authors": [
 		{
@@ -10,5 +10,20 @@
 			"institution": "St. Elisabethgruppe GmbH - Marien Hospital Herne | Klinikum der Ruhr-Universität Bochum"
 		}
 	],
-	"framework-version": 16
+	"framework-version": 16,
+	"auth-ajax-actions": [
+		"scan",
+		"status",
+		"apply"
+	],
+	"links": {
+		"project": [
+			{
+				"name": "Fix legacy image/file URLs",
+				"icon": "fas fa-link",
+				"url": "legacy-url-fixer.php",
+				"show-header-and-footer": true
+			}
+		]
+	}
 }
