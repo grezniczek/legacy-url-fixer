@@ -9,6 +9,11 @@ pending repairs. Applying a scan uses optimistic locking: any cell changed after
 The batch writes directly to the relevant configuration table(s) and saves a CSV outcome log in the
 project File Repository.
 
+Use **Show scan details** to inspect the location, current URL, and proposed replacement for every
+repair. Review entries show their exact location, URL, and reason instead. Details are read on demand
+and only shown when the cell still matches its scan-time fingerprint, so source text is not stored in
+the scan cache.
+
 Before a URL is eligible for repair, its supplied 40-character legacy hash must match the referenced
 document ID using the owning project's legacy salt. A mismatched ID/hash pair is retained unchanged
 and reported for review; the module never creates a new URL merely because a document ID exists.

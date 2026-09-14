@@ -15,6 +15,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 {
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
+    private const DETAIL_PAGE_SIZE = 50;
 
     /**
      * Matches absolute image/file URLs, including survey passthru URLs.
@@ -69,6 +70,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->getCachedScanSummary($projectId);
         }
 
+        if ($action === 'details') {
+            $requestedScanId = is_array($payload) ? ($payload['scan_id'] ?? null) : null;
+            $offset = is_array($payload) ? ($payload['offset'] ?? 0) : 0;
+            return $this->getCachedScanDetails($project, $requestedScanId, $offset);
+        }
+
         if ($action === 'apply') {
             $requestedScanId = is_array($payload) ? ($payload['scan_id'] ?? null) : null;
             return $this->applyCachedScan($project, $requestedScanId);
@@ -100,6 +107,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'project_status' => (int) $project['status'],
             'draft_mode' => (int) $project['draft_mode'],
             'items' => [],
+            // Like repair items, these are locators and fingerprints only.
+            // The current text and URL previews are fetched on demand.
+            'detail_items' => [],
             'stats' => [
                 'changed_cells' => 0,
                 'changed_urls' => 0,
@@ -189,6 +199,15 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
                 foreach ($upgraded['states'] as $state => $count) {
                     $scan['stats']['by_hash_state'][$state] = ($scan['stats']['by_hash_state'][$state] ?? 0) + $count;
+                }
+
+                if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0) {
+                    $scan['detail_items'][] = [
+                        'surface' => $surface['id'],
+                        'column' => $column,
+                        'keys' => $keys,
+                        'checksum' => hash('sha256', $value),
+                    ];
                 }
 
                 if ($upgraded['changed'] === 0) {
@@ -370,6 +389,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'issues' => 0,
             'issues_by_reason' => [],
             'states' => [],
+            'matches' => [],
         ];
 
         $result['value'] = preg_replace_callback(self::URL_PATTERN, function (array $match) use (&$result, $project) {
@@ -382,6 +402,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 $result['issues']++;
                 $reason = $urlResult['reason'] ?? 'Unsupported URL format';
                 $result['issues_by_reason'][$reason] = ($result['issues_by_reason'][$reason] ?? 0) + 1;
+                $result['matches'][] = [
+                    'state' => 'review',
+                    'url' => $match[0],
+                    'reason' => $reason,
+                ];
                 return $match[0];
             }
             if ($urlResult['state'] === 'ignored') {
@@ -390,6 +415,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
             $result['changed']++;
             $result['states'][$urlResult['state']] = ($result['states'][$urlResult['state']] ?? 0) + 1;
+            $result['matches'][] = [
+                'state' => 'repair',
+                'url' => $match[0],
+                'replacement' => $urlResult['url'],
+            ];
             return $urlResult['url'];
         }, $value);
 
@@ -677,6 +707,136 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'project_status' => $scan['project_status'],
             'draft_mode' => $scan['draft_mode'],
             'stats' => $scan['stats'],
+        ];
+    }
+
+    /**
+     * Re-read a page of scanned cells to show URL-level details. The scan cache
+     * never contains source text or URLs; each value is checked against its
+     * scan-time fingerprint before it is returned to the browser.
+     */
+    private function getCachedScanDetails(array $project, $requestedScanId, $offset): array
+    {
+        $projectId = (int) $project['project_id'];
+        $scan = $this->getCachedScan($projectId);
+        if ($scan === null) {
+            throw new \Exception('No cached scan is available. Run a new scan first.');
+        }
+        if (!is_string($requestedScanId) || !hash_equals($scan['id'], $requestedScanId)) {
+            throw new \Exception('The scan result is no longer current. Run a new scan first.');
+        }
+        if ((int) $scan['project_status'] !== (int) $project['status'] || (int) $scan['draft_mode'] !== (int) $project['draft_mode']) {
+            throw new \Exception('The project’s development/draft state changed since scanning. Run a new scan first.');
+        }
+
+        $detailItems = is_array($scan['detail_items'] ?? null) ? $scan['detail_items'] : [];
+        $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
+        $page = array_slice($detailItems, $offset, self::DETAIL_PAGE_SIZE);
+        $surfaces = [];
+        foreach ($this->getScanSurfaces($project) as $surface) {
+            $surfaces[$surface['id']] = $surface;
+        }
+
+        $details = [];
+        $staleCells = 0;
+        foreach ($page as $item) {
+            $surface = $surfaces[$item['surface'] ?? ''] ?? null;
+            if ($surface === null) {
+                $details[] = $this->staleDetail($item, null, 'The scanned surface is no longer available.');
+                $staleCells++;
+                continue;
+            }
+
+            $source = $this->getDetailItemSource($surface, $item, $project);
+            if (!isset($source['value'])) {
+                $details[] = $this->staleDetail($item, $surface, $source['reason']);
+                $staleCells++;
+                continue;
+            }
+
+            $upgraded = $this->upgradeText($source['value'], $project);
+            foreach ($upgraded['matches'] as $match) {
+                $details[] = [
+                    'state' => $match['state'],
+                    'surface' => $surface['label'],
+                    'table' => $surface['table'],
+                    'column' => $item['column'],
+                    'keys' => $item['keys'],
+                    'url' => $match['url'],
+                    'replacement' => $match['replacement'] ?? null,
+                    'reason' => $match['reason'] ?? null,
+                ];
+            }
+        }
+
+        $nextOffset = $offset + count($page);
+        return [
+            'scan_id' => $scan['id'],
+            'details' => $details,
+            'offset' => $offset,
+            'next_offset' => $nextOffset,
+            'has_more' => $nextOffset < count($detailItems),
+            'total_cells' => count($detailItems),
+            'stale_cells' => $staleCells,
+        ];
+    }
+
+    /**
+     * Read one cached locator using the same schema and project-scope checks
+     * used by repair. A changed value is never previewed as if it were scanned.
+     */
+    private function getDetailItemSource(array $surface, array $item, array $project): array
+    {
+        $columns = $this->getColumns($surface['table']);
+        $primaryKeys = $this->getPrimaryKeys($columns);
+        $column = $item['column'] ?? null;
+        if (!is_string($column)
+            || !is_array($item['keys'] ?? null)
+            || !is_string($item['checksum'] ?? null)
+            || !in_array($column, $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? [])), true)
+            || array_keys($item['keys']) !== $primaryKeys
+        ) {
+            return ['reason' => 'The table schema or row identifier changed after the scan.'];
+        }
+
+        $scope = $this->getScopeClause($surface, $columns, '', (int) $project['project_id']);
+        if ($scope === null) {
+            return ['reason' => 'The scanned surface is no longer available for this project.'];
+        }
+
+        $keyWhere = [];
+        $keyParameters = [];
+        foreach ($primaryKeys as $key) {
+            $keyWhere[] = $this->identifier($key) . ' = ?';
+            $keyParameters[] = $item['keys'][$key];
+        }
+        $sql = 'SELECT ' . $this->identifier($column)
+            . ' FROM ' . $this->identifier($surface['table'])
+            . ' WHERE ' . implode(' AND ', $keyWhere)
+            . ' AND (' . $scope['sql'] . ')';
+        $row = $this->query($sql, array_merge($keyParameters, $scope['params']))->fetch_assoc();
+        if ($row === null || $row === false) {
+            return ['reason' => 'The scanned row no longer exists.'];
+        }
+
+        $value = $row[$column] ?? null;
+        if (!is_string($value) || !hash_equals($item['checksum'], hash('sha256', $value))) {
+            return ['reason' => 'This cell changed after the scan. Run a new scan for an updated preview.'];
+        }
+        return ['value' => $value];
+    }
+
+    private function staleDetail(array $item, ?array $surface, string $reason): array
+    {
+        return [
+            'state' => 'stale',
+            'surface' => $surface['label'] ?? ($item['surface'] ?? 'Unknown surface'),
+            'table' => $surface['table'] ?? null,
+            'column' => $item['column'] ?? null,
+            'keys' => $item['keys'] ?? [],
+            'url' => null,
+            'replacement' => null,
+            'reason' => $reason,
         ];
     }
 

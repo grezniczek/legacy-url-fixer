@@ -24,6 +24,9 @@ ExternalModules::requireDesignRights();
         <button type="button" id="legacy-url-scan" class="btn btn-primaryrc">
             <i class="fas fa-search"></i> Scan project
         </button>
+        <button type="button" id="legacy-url-details" class="btn btn-secondary" disabled>
+            <i class="fas fa-list"></i> Show scan details
+        </button>
         <button type="button" id="legacy-url-apply" class="btn btn-danger" disabled>
             <i class="fas fa-wrench"></i> Fix all scanned URLs
         </button>
@@ -39,7 +42,30 @@ ExternalModules::requireDesignRights();
             <div id="legacy-url-skipped-surfaces" class="mt-3 text-muted"></div>
         </div>
     </div>
-    <div id="legacy-url-apply-result" class="alert" style="display:none" role="status"></div>
+    <div id="legacy-url-details-result" class="card mt-3" style="display:none">
+        <div class="card-header"><strong>Scan details</strong></div>
+        <div class="card-body">
+            <div id="legacy-url-details-note" class="small text-muted mb-2"></div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>Location</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="legacy-url-details-rows"></tbody>
+                </table>
+            </div>
+            <p class="mb-0 mt-3">
+                <button type="button" id="legacy-url-details-more" class="btn btn-secondary btn-sm" style="display:none">
+                    Show more
+                </button>
+            </p>
+        </div>
+    </div>
+    <div id="legacy-url-apply-result" class="alert mt-2" style="display:none" role="status"></div>
 </div>
 
 <?=$module->initializeJavascriptModuleObject()?>
@@ -49,7 +75,9 @@ ExternalModules::requireDesignRights();
 
         const module = <?=$module->getJavascriptModuleObjectName()?>;
         let currentScan = null;
+        let detailOffset = 0;
         const $scan = $('#legacy-url-scan');
+        const $details = $('#legacy-url-details');
         const $apply = $('#legacy-url-apply');
         const $progress = $('#legacy-url-progress');
         const $error = $('#legacy-url-error');
@@ -57,6 +85,10 @@ ExternalModules::requireDesignRights();
         const $stats = $('#legacy-url-stats');
         const $surfaces = $('#legacy-url-surface-results');
         const $skippedSurfaces = $('#legacy-url-skipped-surfaces');
+        const $detailsResult = $('#legacy-url-details-result');
+        const $detailsNote = $('#legacy-url-details-note');
+        const $detailsRows = $('#legacy-url-details-rows');
+        const $detailsMore = $('#legacy-url-details-more');
         const $applyResult = $('#legacy-url-apply-result');
 
         function escapeHtml(value) {
@@ -71,6 +103,8 @@ ExternalModules::requireDesignRights();
 
         function setBusy(message) {
             $scan.prop('disabled', true);
+            $details.prop('disabled', true);
+            $detailsMore.prop('disabled', true);
             $apply.prop('disabled', true);
             $progress.text(message);
             $error.hide();
@@ -78,6 +112,8 @@ ExternalModules::requireDesignRights();
 
         function setIdle() {
             $scan.prop('disabled', false);
+            $details.prop('disabled', !currentScan || (currentScan.stats.changed_cells === 0 && currentScan.stats.issues === 0));
+            $detailsMore.prop('disabled', false);
             $apply.prop('disabled', !currentScan || currentScan.stats.changed_cells === 0);
             $progress.text('');
         }
@@ -90,6 +126,10 @@ ExternalModules::requireDesignRights();
 
         function renderScan(scan) {
             currentScan = scan;
+            detailOffset = 0;
+            $detailsRows.empty();
+            $detailsResult.hide();
+            $detailsMore.hide();
             const stats = scan.stats;
             $stats.html(
                 stat('Cells to update', stats.changed_cells)
@@ -127,9 +167,79 @@ ExternalModules::requireDesignRights();
             setIdle();
         }
 
+        function formatKeys(keys) {
+            const pairs = Object.keys(keys || {}).map(function (key) {
+                return key + '=' + keys[key];
+            });
+            return pairs.length ? pairs.join(', ') : 'No row identifier available';
+        }
+
+        function urlPreview(label, url) {
+            if (!url) return '';
+            return '<div class="mb-1"><span class="text-muted small">' + escapeHtml(label) + '</span><br>'
+                + '<code style="white-space:normal;overflow-wrap:anywhere">' + escapeHtml(url) + '</code></div>';
+        }
+
+        function renderDetails(result, append) {
+            if (!append) $detailsRows.empty();
+
+            const rows = (result.details || []).map(function (detail) {
+                let action;
+                let contents = '';
+                if (detail.state === 'repair') {
+                    action = '<span class="badge bg-success">Will update</span>';
+                    contents = urlPreview('Current URL', detail.url) + urlPreview('Replacement URL', detail.replacement);
+                } else if (detail.state === 'review') {
+                    action = '<span class="badge bg-warning text-dark">Review</span>';
+                    contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported URL format') + '</div>'
+                        + urlPreview('Current URL', detail.url);
+                } else {
+                    action = '<span class="badge bg-secondary">Refresh needed</span>';
+                    contents = escapeHtml(detail.reason || 'The scanned item is no longer available.');
+                }
+                const location = '<strong>' + escapeHtml(detail.surface || 'Unknown surface') + '</strong><br>'
+                    + '<span class="small text-muted">' + escapeHtml(detail.table || '') + ' · '
+                    + escapeHtml(detail.column || '') + '<br>' + escapeHtml(formatKeys(detail.keys)) + '</span>';
+                return '<tr><td>' + action + '</td><td>' + location + '</td><td>' + contents + '</td></tr>';
+            });
+            if (rows.length) {
+                $detailsRows.append(rows.join(''));
+            } else if (!append) {
+                $detailsRows.html('<tr><td colspan="3" class="text-muted">No URL details are available for this scan.</td></tr>');
+            }
+
+            detailOffset = result.next_offset || 0;
+            let note = result.total_cells === 0 ? 'No URL details are available for this scan.'
+                : 'Showing details for scanned cells ' + (result.offset + 1) + '–'
+                    + Math.min(detailOffset, result.total_cells) + ' of ' + result.total_cells + '.';
+            if (result.stale_cells) {
+                note += ' ' + result.stale_cells + ' cell(s) changed or became unavailable after the scan.';
+            }
+            $detailsNote.text(note);
+            $detailsMore.toggle(!!result.has_more);
+            $detailsResult.show();
+        }
+
+        function loadDetails(append) {
+            if (!currentScan) return;
+            const offset = append ? detailOffset : 0;
+            setBusy(append ? 'Loading more scan details…' : 'Loading scan details…');
+            module.ajax('details', {scan_id: currentScan.scan_id, offset: offset}).then(function (result) {
+                if (!currentScan || result.scan_id !== currentScan.scan_id) return;
+                renderDetails(result, append);
+                setIdle();
+            }).catch(function (error) {
+                $error.text(errorMessage(error)).show();
+                setIdle();
+            });
+        }
+
         function runScan() {
             setBusy('Scanning project configuration…');
             $applyResult.hide();
+            $detailsResult.hide();
+            $detailsRows.empty();
+            $detailsMore.hide();
             return module.ajax('scan', {}).then(renderScan).catch(function (error) {
                 currentScan = null;
                 $error.text(errorMessage(error)).show();
@@ -138,11 +248,18 @@ ExternalModules::requireDesignRights();
         }
 
         $scan.on('click', runScan);
+        $details.on('click', function () {
+            loadDetails(false);
+        });
+        $detailsMore.on('click', function () {
+            loadDetails(true);
+        });
         $apply.on('click', function () {
             if (!currentScan || currentScan.stats.changed_cells === 0) return;
             if (!window.confirm('Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.')) return;
 
             setBusy('Applying URL repairs…');
+            $detailsResult.hide();
             module.ajax('apply', {scan_id: currentScan.scan_id}).then(function (result) {
                 currentScan = null;
                 const counts = result.counts;
