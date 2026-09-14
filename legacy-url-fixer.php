@@ -101,6 +101,27 @@ ExternalModules::requireDesignRights();
             return 'The request could not be completed. See the REDCap logs for details.';
         }
 
+        function confirmWithSimpleDialog(message, title, confirmLabel) {
+            return new Promise(function (resolve) {
+                let settled = false;
+                const settle = function (confirmed) {
+                    if (settled) return;
+                    settled = true;
+                    resolve(confirmed);
+                };
+                simpleDialog(
+                    '<p class="mb-0">' + escapeHtml(message) + '</p>',
+                    title,
+                    null,
+                    500,
+                    function () { settle(false); },
+                    'Cancel',
+                    function () { settle(true); },
+                    confirmLabel
+                );
+            });
+        }
+
         function setBusy(message) {
             $scan.prop('disabled', true);
             $details.prop('disabled', true);
@@ -254,9 +275,14 @@ ExternalModules::requireDesignRights();
         $detailsMore.on('click', function () {
             loadDetails(true);
         });
-        $apply.on('click', function () {
+        $apply.on('click', async function () {
             if (!currentScan || currentScan.stats.changed_cells === 0) return;
-            if (!window.confirm('Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.')) return;
+            const confirmed = await confirmWithSimpleDialog(
+                'Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.',
+                'Confirm URL repairs',
+                'Fix URLs'
+            );
+            if (!confirmed) return;
 
             setBusy('Applying URL repairs…');
             $detailsResult.hide();

@@ -471,6 +471,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         ];
     }
 
+    /**
+     * The dynamic identifiers in this method have been validated by
+     * identifier(). Psalm cannot retain that fact across the schema lookup.
+     *
+     * @psalm-suppress TaintedSql
+     */
     private function applyItem(array $surface, array $item, array $project): array
     {
         $columns = $this->getColumns($surface['table']);
@@ -530,9 +536,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             . ' AND ' . $this->identifier($column) . ' = ?'
             . ' AND (' . $scope['sql'] . ')';
         $update = $this->createQuery();
-        // Dynamic column names come only from SHOW COLUMNS and are strictly
-        // validated by identifier() before becoming part of this SQL string.
-        /** @psalm-suppress TaintedSql */
         $update->add($updateSql, array_merge($parameters, $keyParameters, [$oldValue], $scope['params']));
         $update->execute();
         if ($update->affected_rows !== 1) {
@@ -711,7 +714,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
             ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
             ['id' => 'multilanguage-metadata', 'label' => 'Multi-Language metadata', 'table' => 'redcap_multilanguage_metadata' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
-            ['id' => 'multilanguage-config', 'label' => 'Multi-Language configuration', 'table' => 'redcap_multilanguage_config' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
             ['id' => 'multilanguage-ui', 'label' => 'Multi-Language UI text', 'table' => 'redcap_multilanguage_ui' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
         ];
 
@@ -772,20 +774,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'id' => 'multilanguage-metadata-draft',
                 'label' => 'Multi-Language metadata (Draft Mode)',
                 'table' => 'redcap_multilanguage_metadata_temp',
-                'scope' => 'direct',
-                'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
-            ],
-            [
-                'id' => 'multilanguage-config-live',
-                'label' => 'Multi-Language configuration (active table)',
-                'table' => 'redcap_multilanguage_config',
-                'scope' => 'direct',
-                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
-            ],
-            [
-                'id' => 'multilanguage-config-draft',
-                'label' => 'Multi-Language configuration (Draft Mode)',
-                'table' => 'redcap_multilanguage_config_temp',
                 'scope' => 'direct',
                 'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
             ],
@@ -938,7 +926,13 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         return ['sql' => implode(' OR ', $conditions), 'params' => $parameters];
     }
 
-    /** @return array<string, array<string, string>> */
+    /**
+     * @return array<string, array<string, string>>
+     * @psalm-suppress TaintedSql
+     *
+     * $table comes from the fixed surface registry. It is additionally checked
+     * by identifier() immediately before it is interpolated into SHOW COLUMNS.
+     */
     private function getColumns(string $table): array
     {
         $exists = $this->query(
@@ -950,9 +944,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         $columns = [];
-        // Psalm models all database result fields as tainted. $table originates
-        // in the fixed surface registry and identifier() validates its grammar.
-        /** @psalm-suppress TaintedSql */
         $result = $this->query('SHOW COLUMNS FROM ' . $this->identifier($table), []);
         while ($column = $result->fetch_assoc()) {
             $columns[$column['Field']] = $column;
