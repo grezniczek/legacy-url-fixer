@@ -22,8 +22,8 @@ reported for review and are never repaired.
 
 The module scans data dictionary content (development projects, or only `redcap_metadata_temp` while
 a production project is in Draft Mode), surveys, pending survey invitations, alerts, reports,
-dashboards, descriptive popups, e-Consent configuration, MyCap tasks, data-quality rules, and
-Multi-Language Management content. It deliberately does not alter record data or historical/sent
+dashboards, descriptive popups, e-Consent configuration, MyCap tasks, and Multi-Language Management
+content. It deliberately does not alter record data or historical/sent
 delivery and audit data.
 
 REDCap super users can also use **Scan legacy image/file URLs** from the Control Center. It scans one

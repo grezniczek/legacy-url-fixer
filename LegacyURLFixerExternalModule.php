@@ -530,6 +530,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             . ' AND ' . $this->identifier($column) . ' = ?'
             . ' AND (' . $scope['sql'] . ')';
         $update = $this->createQuery();
+        // Dynamic column names come only from SHOW COLUMNS and are strictly
+        // validated by identifier() before becoming part of this SQL string.
+        /** @psalm-suppress TaintedSql */
         $update->add($updateSql, array_merge($parameters, $keyParameters, [$oldValue], $scope['params']));
         $update->execute();
         if ($update->affected_rows !== 1) {
@@ -707,7 +710,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'scope' => 'direct'],
             ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
             ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
-            ['id' => 'data-quality-rules', 'label' => 'Data Quality rules', 'table' => 'redcap_data_quality_rules', 'scope' => 'direct'],
             ['id' => 'multilanguage-metadata', 'label' => 'Multi-Language metadata', 'table' => 'redcap_multilanguage_metadata' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
             ['id' => 'multilanguage-config', 'label' => 'Multi-Language configuration', 'table' => 'redcap_multilanguage_config' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
             ['id' => 'multilanguage-ui', 'label' => 'Multi-Language UI text', 'table' => 'redcap_multilanguage_ui' . $multilanguageSuffix, 'scope' => 'direct', 'reset_hash' => true],
@@ -759,7 +761,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'scope' => 'direct'],
             ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
             ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
-            ['id' => 'data-quality-rules', 'label' => 'Data Quality rules', 'table' => 'redcap_data_quality_rules', 'scope' => 'direct'],
             [
                 'id' => 'multilanguage-metadata-live',
                 'label' => 'Multi-Language metadata (active table)',
@@ -949,6 +950,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         $columns = [];
+        // Psalm models all database result fields as tainted. $table originates
+        // in the fixed surface registry and identifier() validates its grammar.
+        /** @psalm-suppress TaintedSql */
         $result = $this->query('SHOW COLUMNS FROM ' . $this->identifier($table), []);
         while ($column = $result->fetch_assoc()) {
             $columns[$column['Field']] = $column;
@@ -1257,9 +1261,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
     /**
      * Identifiers originate only from the fixed registry or SHOW COLUMNS.
+     * A narrow grammar is sufficient for all supported REDCap table/column
+     * names and makes dynamic identifier construction injection-safe.
      */
     private function identifier(string $identifier): string
     {
-        return '`' . str_replace('`', '``', $identifier) . '`';
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $identifier) !== 1) {
+            throw new \InvalidArgumentException('Invalid database identifier.');
+        }
+        return '`' . $identifier . '`';
     }
 }
