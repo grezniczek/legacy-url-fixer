@@ -3,6 +3,8 @@
 Repairs static `DataEntry/image_view.php` and `DataEntry/file_download.php` URLs after REDCap changed
 its document-hash generation in September 2026.
 
+Developed with assistance from OpenAI Codex.
+
 Use **Fix legacy image/file URLs** from a project's External Modules menu. Opening the page scans the
 project's authored configuration, classifies both legacy and current document hashes, caches only row
 locators and SHA-256 fingerprints, and shows the pending repairs. Applying a scan uses optimistic
