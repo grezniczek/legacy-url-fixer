@@ -36,7 +36,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
     /**
      * Matches absolute image/file URLs, including survey passthru URLs.
-     * Host and legacy-hash checks are made separately before a URL qualifies.
+     * Host, document ownership, and hash checks are made separately before a
+     * URL is classified as repairable, current, or requiring review.
      */
     private const URL_PATTERN = '~(?:
         https?://[^\s<>"\']*?DataEntry/(?:image_view|file_download)\.php\?[^\s<>"\']*
@@ -654,9 +655,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         parse_str($parts['query'], $parameters);
-        $providedHash = is_scalar($parameters['doc_id_hash'] ?? null) ? (string) $parameters['doc_id_hash'] : '';
-        if (!$this->isLegacyDocIdHash($providedHash)) {
-            return ['state' => 'ignored'];
+        if (!array_key_exists('doc_id_hash', $parameters) || !is_scalar($parameters['doc_id_hash'])) {
+            return ['state' => 'issue', 'reason' => 'No valid document hash was found'];
+        }
+        $providedHash = (string) $parameters['doc_id_hash'];
+        if ($providedHash === '') {
+            return ['state' => 'issue', 'reason' => 'No valid document hash was found'];
         }
 
         $docId = $parameters['id'] ?? null;
@@ -687,7 +691,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return ['state' => 'current'];
         }
         if (!hash_equals($legacyHash, $providedHash)) {
-            return ['state' => 'issue', 'reason' => 'The legacy document hash does not match the document ID'];
+            return ['state' => 'issue', 'reason' => 'The document hash does not match the document ID'];
         }
 
         $parameters['doc_id_hash'] = $currentHash;
@@ -912,23 +916,20 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private function getCandidateWhereClause(array $columns, string $alias): array
     {
         $prefix = $alias === '' ? '' : $alias . '.';
-        $legacyHash = 'doc_id_hash=' . str_repeat('_', 40);
         $endpoints = [
             'DataEntry/image_view.php',
             'DataEntry/file_download.php',
             'DataEntry%2Fimage_view.php',
             'DataEntry%2Ffile_download.php',
         ];
-        // The delimiter immediately after the 40 wildcards prevents current,
-        // longer hashes from passing the SQL prefilter.
-        $hashEndings = ['&%', '&amp;%', '"%', "'%", '>%', '#%', ''];
         $patterns = [];
         foreach ($this->getConfiguredRedcapHosts() as $host) {
             foreach (['%://' . $host . '/%', '%://' . $host . ':%/%'] as $hostPrefix) {
                 foreach ($endpoints as $endpoint) {
-                    foreach ($hashEndings as $ending) {
-                        $patterns[] = $hostPrefix . $endpoint . '%' . $legacyHash . $ending;
-                    }
+                    // The SQL prefilter intentionally accepts both legacy and
+                    // current hash lengths. Exact host, endpoint, ownership,
+                    // and hash validation happens in upgradeUrl().
+                    $patterns[] = $hostPrefix . $endpoint . '%doc_id_hash=%';
                 }
             }
         }
@@ -1293,11 +1294,6 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private function isInteger($value): bool
     {
         return is_int($value) || (is_string($value) && $value !== '' && ctype_digit($value));
-    }
-
-    private function isLegacyDocIdHash(string $hash): bool
-    {
-        return preg_match('/^[a-f0-9]{40}$/i', $hash) === 1;
     }
 
     /** @param array<string, mixed> $parts */

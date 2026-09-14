@@ -9,8 +9,9 @@ ExternalModules::requireDesignRights();
     <h4><i class="fas fa-link"></i> Fix legacy image/file URLs</h4>
 
     <p>
-        This scans authored project configuration for old static <code>DataEntry/image_view.php</code>
-        and <code>DataEntry/file_download.php</code> URLs, including survey passthru URLs. The scan is
+        This scans authored project configuration for static <code>DataEntry/image_view.php</code>
+        and <code>DataEntry/file_download.php</code> URLs, including survey passthru URLs. It classifies
+        both legacy and current document hashes; only verified legacy URLs can be repaired. The scan is
         cached only as row locators and content fingerprints; it does not cache the text being scanned.
     </p>
 
@@ -160,7 +161,7 @@ ExternalModules::requireDesignRights();
             $stats.html(
                 stat('Cells to update', stats.changed_cells)
                 + stat('URLs to update', stats.changed_urls)
-                + stat('Already current', stats.current_urls)
+                + stat('Valid current URLs', stats.current_urls)
                 + stat('URLs needing review', stats.issues)
             );
 
