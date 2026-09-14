@@ -15,9 +15,19 @@
 		"scan",
 		"status",
 		"details",
-		"apply"
+		"apply",
+		"control-center-scan",
+		"control-center-status"
 	],
 	"links": {
+		"control-center": [
+			{
+				"name": "Scan legacy image/file URLs",
+				"icon": "fas fa-search",
+				"url": "legacy-url-fixer-control-center.php",
+				"show-header-and-footer": true
+			}
+		],
 		"project": [
 			{
 				"name": "Fix legacy image/file URLs",

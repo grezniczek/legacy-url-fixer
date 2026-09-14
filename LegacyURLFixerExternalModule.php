@@ -14,6 +14,7 @@ use ExternalModules\ExternalModules;
 class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModule
 {
     private const SCAN_CACHE_KEY = 'scan-cache';
+    private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
 
@@ -50,6 +51,15 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $user_id,
         $group_id
     ) {
+        if (in_array($action, ['control-center-scan', 'control-center-status'], true)) {
+            $this->requireControlCenterAccess();
+            if ($action === 'control-center-status') {
+                return $this->getControlCenterScanStatus();
+            }
+            $surfaceId = is_array($payload) ? ($payload['surface_id'] ?? null) : null;
+            return $this->runControlCenterScan($surfaceId);
+        }
+
         if (!is_numeric($project_id)) {
             throw new \Exception('A project context is required.');
         }
@@ -82,6 +92,13 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         throw new \Exception('Unsupported Legacy URL Fixer action.');
+    }
+
+    private function requireControlCenterAccess(): void
+    {
+        if (!$this->isSuperUser()) {
+            throw new \Exception('Only a REDCap super user may run the Control Center scan.');
+        }
     }
 
     /**
@@ -133,6 +150,163 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $this->setProjectSetting(self::SCAN_CACHE_KEY, $encodedScan, $projectId);
         return $this->scanSummary($scan);
+    }
+
+    /**
+     * Scan one physical surface across non-deleted projects. This intentionally
+     * records only project IDs: project-level scan and repair remain the place
+     * to inspect configuration content.
+     */
+    private function runControlCenterScan($surfaceId): array
+    {
+        if (!is_string($surfaceId)) {
+            throw new \Exception('A Control Center scan surface is required.');
+        }
+        $surfaces = [];
+        foreach ($this->getControlCenterScanSurfaces() as $surface) {
+            $surfaces[$surface['id']] = $surface;
+        }
+        $surface = $surfaces[$surfaceId] ?? null;
+        if ($surface === null) {
+            throw new \Exception('The requested Control Center scan surface is not available.');
+        }
+
+        $scan = [
+            'surface_id' => $surface['id'],
+            'created_at' => date('c'),
+            'status' => 'complete',
+            'message' => null,
+            'project_ids' => [],
+        ];
+        $columns = $this->getColumns($surface['table']);
+        if ($columns === []) {
+            $scan['status'] = 'unavailable';
+            $scan['message'] = 'The table is not available in this REDCap schema.';
+            return $this->cacheControlCenterScan($scan, $surface);
+        }
+
+        $primaryKeys = $this->getPrimaryKeys($columns);
+        $textColumns = $this->getTextColumns($columns, array_merge($primaryKeys, $surface['exclude'] ?? []));
+        if ($textColumns === []) {
+            $scan['status'] = 'unavailable';
+            $scan['message'] = 'The table has no scanable text columns.';
+            return $this->cacheControlCenterScan($scan, $surface);
+        }
+
+        $scope = $this->getControlCenterScopeClause($surface, $columns);
+        if ($scope === null) {
+            $scan['status'] = 'unavailable';
+            $scan['message'] = 'The required project relationship is not available in this REDCap schema.';
+            return $this->cacheControlCenterScan($scan, $surface);
+        }
+
+        $candidateWhere = $this->getCandidateWhereClause($textColumns, 't');
+        $selectColumns = ['p.`project_id` AS `control_center_project_id`'];
+        foreach ($textColumns as $column) {
+            $selectColumns[] = 't.' . $this->identifier($column);
+        }
+        $sql = 'SELECT ' . implode(', ', $selectColumns)
+            . ' FROM ' . $this->identifier($surface['table']) . ' t'
+            . $scope['join']
+            . ' WHERE (' . $scope['sql'] . ') AND (' . $candidateWhere['sql'] . ')';
+        $result = $this->query($sql, $candidateWhere['params']);
+
+        $this->documentCache = [];
+        $affected = [];
+        while ($row = $result->fetch_assoc()) {
+            $projectId = $row['control_center_project_id'] ?? null;
+            if (!$this->isInteger($projectId) || (int) $projectId < 1) {
+                continue;
+            }
+            $projectId = (int) $projectId;
+            foreach ($textColumns as $column) {
+                $value = $row[$column] ?? '';
+                if (!is_string($value) || !$this->containsPotentialUrl($value)) {
+                    continue;
+                }
+                $upgraded = $this->upgradeText($value, ['project_id' => $projectId]);
+                if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0) {
+                    $affected[$projectId] = true;
+                    break;
+                }
+            }
+        }
+
+        $scan['project_ids'] = array_map('intval', array_keys($affected));
+        sort($scan['project_ids'], SORT_NUMERIC);
+        return $this->cacheControlCenterScan($scan, $surface);
+    }
+
+    /** @return array{surfaces: array<int, array<string, mixed>>} */
+    private function getControlCenterScanStatus(): array
+    {
+        $summaries = [];
+        foreach ($this->getControlCenterScanSurfaces() as $surface) {
+            $cached = $this->getControlCenterCachedScan($surface['id']);
+            $summaries[] = $cached === null
+                ? [
+                    'surface_id' => $surface['id'],
+                    'label' => $surface['label'],
+                    'created_at' => null,
+                    'status' => 'not-scanned',
+                    'message' => null,
+                    'project_ids' => [],
+                    'project_count' => 0,
+                ]
+                : $this->controlCenterScanSummary($cached, $surface);
+        }
+        return ['surfaces' => $summaries];
+    }
+
+    private function cacheControlCenterScan(array $scan, array $surface): array
+    {
+        $encoded = json_encode($scan);
+        if ($encoded === false || strlen($encoded) > self::MAX_SCAN_CACHE_BYTES) {
+            throw new \Exception('The Control Center scan result is too large to cache safely.');
+        }
+        $this->setSystemSetting(self::CONTROL_CENTER_SCAN_CACHE_PREFIX . $surface['id'], $encoded);
+        return $this->controlCenterScanSummary($scan, $surface);
+    }
+
+    private function getControlCenterCachedScan(string $surfaceId): ?array
+    {
+        $value = $this->getSystemSetting(self::CONTROL_CENTER_SCAN_CACHE_PREFIX . $surfaceId);
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $scan = json_decode($value, true);
+        if (!is_array($scan)
+            || ($scan['surface_id'] ?? null) !== $surfaceId
+            || !is_string($scan['created_at'] ?? null)
+            || !is_string($scan['status'] ?? null)
+            || !is_array($scan['project_ids'] ?? null)
+        ) {
+            return null;
+        }
+        $projectIds = [];
+        foreach ($scan['project_ids'] as $projectId) {
+            if ($this->isInteger($projectId) && (int) $projectId > 0) {
+                $projectIds[(int) $projectId] = true;
+            }
+        }
+        $scan['project_ids'] = array_map('intval', array_keys($projectIds));
+        sort($scan['project_ids'], SORT_NUMERIC);
+        $scan['message'] = is_string($scan['message'] ?? null) ? $scan['message'] : null;
+        return $scan;
+    }
+
+    private function controlCenterScanSummary(array $scan, array $surface): array
+    {
+        $projectIds = $scan['project_ids'];
+        return [
+            'surface_id' => $surface['id'],
+            'label' => $surface['label'],
+            'created_at' => $scan['created_at'],
+            'status' => $scan['status'],
+            'message' => $scan['message'],
+            'project_ids' => $projectIds,
+            'project_count' => count($projectIds),
+        ];
     }
 
     private function scanSurface(array $surface, array $project, array &$scan): void
@@ -549,6 +723,86 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     }
 
     /**
+     * Physical tables used by the Control Center scanner. Data dictionary and
+     * Multi-Language tables are split where Draft Mode changes the live table.
+     */
+    private function getControlCenterScanSurfaces(): array
+    {
+        return [
+            [
+                'id' => 'data-dictionary-active',
+                'label' => 'Data dictionary (active table)',
+                'table' => 'redcap_metadata',
+                'scope' => 'direct',
+                // This is read-only. Production repairs are still restricted
+                // to redcap_metadata_temp while a project is in Draft Mode.
+                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
+            ],
+            [
+                'id' => 'data-dictionary-draft',
+                'label' => 'Draft data dictionary (non-development projects in Draft Mode)',
+                'table' => 'redcap_metadata_temp',
+                'scope' => 'direct',
+                'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
+            ],
+            ['id' => 'surveys', 'label' => 'Survey settings', 'table' => 'redcap_surveys', 'scope' => 'direct'],
+            ['id' => 'automated-invitations', 'label' => 'Automated survey invitations', 'table' => 'redcap_surveys_scheduler', 'scope' => 'survey'],
+            ['id' => 'pending-survey-emails', 'label' => 'Pending survey invitations', 'table' => 'redcap_surveys_emails', 'scope' => 'survey', 'pending_only' => true],
+            ['id' => 'alerts', 'label' => 'Alerts & Notifications', 'table' => 'redcap_alerts', 'scope' => 'direct'],
+            ['id' => 'reports', 'label' => 'Reports', 'table' => 'redcap_reports', 'scope' => 'direct'],
+            ['id' => 'project-dashboards', 'label' => 'Project dashboards', 'table' => 'redcap_project_dashboards', 'scope' => 'direct', 'exclude' => ['cache_content']],
+            ['id' => 'record-dashboards', 'label' => 'Record status dashboards', 'table' => 'redcap_record_dashboards', 'scope' => 'direct'],
+            ['id' => 'descriptive-popups', 'label' => 'Descriptive popups', 'table' => 'redcap_descriptive_popups', 'scope' => 'direct'],
+            ['id' => 'econsent-settings', 'label' => 'e-Consent settings', 'table' => 'redcap_econsent', 'scope' => 'direct'],
+            ['id' => 'econsent-forms', 'label' => 'e-Consent form settings', 'table' => 'redcap_econsent_forms', 'scope' => 'econsent'],
+            ['id' => 'mycap-tasks', 'label' => 'MyCap tasks', 'table' => 'redcap_mycap_tasks', 'scope' => 'direct'],
+            ['id' => 'data-quality-rules', 'label' => 'Data Quality rules', 'table' => 'redcap_data_quality_rules', 'scope' => 'direct'],
+            [
+                'id' => 'multilanguage-metadata-live',
+                'label' => 'Multi-Language metadata (active table)',
+                'table' => 'redcap_multilanguage_metadata',
+                'scope' => 'direct',
+                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
+            ],
+            [
+                'id' => 'multilanguage-metadata-draft',
+                'label' => 'Multi-Language metadata (Draft Mode)',
+                'table' => 'redcap_multilanguage_metadata_temp',
+                'scope' => 'direct',
+                'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
+            ],
+            [
+                'id' => 'multilanguage-config-live',
+                'label' => 'Multi-Language configuration (active table)',
+                'table' => 'redcap_multilanguage_config',
+                'scope' => 'direct',
+                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
+            ],
+            [
+                'id' => 'multilanguage-config-draft',
+                'label' => 'Multi-Language configuration (Draft Mode)',
+                'table' => 'redcap_multilanguage_config_temp',
+                'scope' => 'direct',
+                'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
+            ],
+            [
+                'id' => 'multilanguage-ui-live',
+                'label' => 'Multi-Language UI text (active table)',
+                'table' => 'redcap_multilanguage_ui',
+                'scope' => 'direct',
+                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
+            ],
+            [
+                'id' => 'multilanguage-ui-draft',
+                'label' => 'Multi-Language UI text (Draft Mode)',
+                'table' => 'redcap_multilanguage_ui_temp',
+                'scope' => 'direct',
+                'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
+            ],
+        ];
+    }
+
+    /**
      * Production projects never expose redcap_metadata as a write target.
      */
     private function getActiveMetadataTable(array $project): ?string
@@ -590,6 +844,56 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'sql' => 'EXISTS (SELECT 1 FROM redcap_econsent c WHERE c.`consent_id` = '
                     . $prefix . $this->identifier('consent_id') . ' AND c.`project_id` = ?)',
                 'params' => [$projectId],
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * Joins a physical surface to non-deleted projects for a system-wide scan.
+     * Every SQL fragment originates in the fixed Control Center registry.
+     */
+    private function getControlCenterScopeClause(array $surface, array $columns): ?array
+    {
+        $projectWhere = 'p.`date_deleted` IS NULL';
+        if (isset($surface['project_filter'])) {
+            $projectWhere .= ' AND (' . $surface['project_filter'] . ')';
+        }
+
+        if ($surface['scope'] === 'direct') {
+            if (!isset($columns['project_id'])) {
+                return null;
+            }
+            return [
+                'join' => ' INNER JOIN redcap_projects p ON p.`project_id` = t.`project_id`',
+                'sql' => $projectWhere,
+            ];
+        }
+        if ($surface['scope'] === 'survey') {
+            if (!isset($columns['survey_id'])) {
+                return null;
+            }
+            $sql = $projectWhere;
+            if (($surface['pending_only'] ?? false) === true) {
+                if (!isset($columns['email_sent'])) {
+                    return null;
+                }
+                $sql .= ' AND t.`email_sent` IS NULL';
+            }
+            return [
+                'join' => ' INNER JOIN redcap_surveys s ON s.`survey_id` = t.`survey_id`'
+                    . ' INNER JOIN redcap_projects p ON p.`project_id` = s.`project_id`',
+                'sql' => $sql,
+            ];
+        }
+        if ($surface['scope'] === 'econsent') {
+            if (!isset($columns['consent_id'])) {
+                return null;
+            }
+            return [
+                'join' => ' INNER JOIN redcap_econsent c ON c.`consent_id` = t.`consent_id`'
+                    . ' INNER JOIN redcap_projects p ON p.`project_id` = c.`project_id`',
+                'sql' => $projectWhere,
             ];
         }
         return null;

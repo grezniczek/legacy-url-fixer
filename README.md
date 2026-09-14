@@ -23,3 +23,8 @@ a production project is in Draft Mode), surveys, pending survey invitations, ale
 dashboards, descriptive popups, e-Consent configuration, MyCap tasks, data-quality rules, and
 Multi-Language Management content. It deliberately does not alter record data or historical/sent
 delivery and audit data.
+
+REDCap super users can also use **Scan legacy image/file URLs** from the Control Center. It scans one
+physical configuration surface at a time across non-deleted projects and caches only the affected PIDs
+for each surface (repairable URLs and URLs requiring review). Each PID links back to the project page;
+the Control Center does not expose URLs, previews, or repair actions.
