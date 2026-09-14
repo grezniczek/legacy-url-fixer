@@ -40,6 +40,10 @@ ExternalModules::requireDesignRights();
             <div id="legacy-url-stats" class="row"></div>
             <div id="legacy-url-surface-results" class="mt-3"></div>
             <div id="legacy-url-skipped-surfaces" class="mt-3 text-muted"></div>
+            <details class="mt-3 small text-muted">
+                <summary>Scanned tables and columns</summary>
+                <div id="legacy-url-scanned-columns" class="mt-2"></div>
+            </details>
         </div>
     </div>
     <div id="legacy-url-details-result" class="card mt-3" style="display:none">
@@ -85,6 +89,7 @@ ExternalModules::requireDesignRights();
         const $stats = $('#legacy-url-stats');
         const $surfaces = $('#legacy-url-surface-results');
         const $skippedSurfaces = $('#legacy-url-skipped-surfaces');
+        const $scannedColumns = $('#legacy-url-scanned-columns');
         const $detailsResult = $('#legacy-url-details-result');
         const $detailsNote = $('#legacy-url-details-note');
         const $detailsRows = $('#legacy-url-details-rows');
@@ -170,6 +175,18 @@ ExternalModules::requireDesignRights();
                 '<table class="table table-sm mb-0"><thead><tr><th>Surface</th><th class="text-end">Cells</th>'
                 + '<th class="text-end">URLs</th><th class="text-end">Review</th></tr></thead><tbody>'
                 + rows.join('') + '</tbody></table>');
+
+            const scannedColumns = stats.scanned_columns || [];
+            const scannedTableRows = scannedColumns.map(function (surface) {
+                const columns = (surface.columns || []).map(function (column) {
+                    return '<code>' + escapeHtml(column) + '</code>';
+                }).join(', ');
+                return '<li><strong>' + escapeHtml(surface.label) + '</strong> '
+                    + '(<code>' + escapeHtml(surface.table) + '</code>): ' + columns + '</li>';
+            });
+            $scannedColumns.html(scannedTableRows.length
+                ? '<ul class="mb-0 ps-3">' + scannedTableRows.join('') + '</ul>'
+                : '<span>No tables were available to scan.</span>');
 
             const skipped = stats.skipped_surfaces || [];
             const issueReasons = stats.issues_by_reason || {};

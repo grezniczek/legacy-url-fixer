@@ -136,6 +136,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'by_hash_state' => [],
                 'surfaces' => [],
                 'skipped_surfaces' => [],
+                'scanned_columns' => [],
             ],
         ];
 
@@ -330,6 +331,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             $scan['stats']['skipped_surfaces'][] = $surface['label'] . ' (not available in this REDCap schema)';
             return;
         }
+
+        $scan['stats']['scanned_columns'][] = [
+            'label' => $surface['label'],
+            'table' => $surface['table'],
+            'columns' => array_values($textColumns),
+        ];
 
         $candidateWhere = $this->getCandidateWhereClause($textColumns, 't');
         $selectColumns = array_merge($primaryKeys, $textColumns);
