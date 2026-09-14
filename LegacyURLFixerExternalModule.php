@@ -1157,7 +1157,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         try {
-            fputcsv($handle, ['scan_id', 'project_id', 'timestamp', 'surface', 'column', 'row_key', 'url_count', 'result', 'detail']);
+            fputcsv($handle, ['scan_id', 'project_id', 'timestamp', 'surface', 'column', 'row_key', 'url_count', 'result', 'detail'], ',', '"', '');
             foreach ($outcomes as $outcome) {
                 fputcsv($handle, [
                     $scan['id'],
@@ -1169,7 +1169,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     $outcome['url_count'],
                     $outcome['result'],
                     $outcome['detail'],
-                ]);
+                ], ',', '"', '');
             }
         } finally {
             fclose($handle);
