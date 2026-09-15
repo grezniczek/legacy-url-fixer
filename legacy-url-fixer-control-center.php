@@ -14,18 +14,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
     <h4><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
 
     <p>
-        Scan one project configuration surface at a time across all non-deleted projects. Each completed scan is
-        cached system-wide as the affected project IDs only. Affected projects have either a repairable
-        legacy URL or a URL requiring review. Use a linked project ID to review and fix project content.
-    </p>
-
-    <div class="alert alert-info">
-        <strong>Performance:</strong> each button scans one physical table/surface. This avoids a single
-        long-running scan across all project configuration. For a production data-dictionary finding, enter
-        Draft Mode before using the project page; repairs there are limited to <code>redcap_metadata_temp</code>.
-    </div>
-
-    <p>
         <button type="button" id="legacy-url-cc-refresh" class="btn btn-secondary">
             <i class="fas fa-sync"></i> Refresh cached results
         </button>
@@ -33,73 +21,109 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
     </p>
 
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
-    <div class="table-responsive">
-        <table class="table table-sm" id="legacy-url-cc-results">
-            <thead>
-                <tr>
-                    <th>Surface</th>
-                    <th>Cached result</th>
-                    <th class="text-end">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td colspan="3" class="text-muted">Loading cached scan results…</td></tr>
-            </tbody>
-        </table>
-    </div>
 
-    <div id="legacy-url-cc-settings-summary" class="card mt-4" style="display:none">
-        <div class="card-header"><strong>Control Center settings</strong></div>
-        <div class="card-body">
-            <p>
-                Scan the fixed set of authored system settings stored in <code>redcap_config</code>. These
-                global settings may be reviewed and fixed here. Their URLs must reference system eDocs
-                (<code>redcap_edocs_metadata.project_id IS NULL</code>); a project-owned eDoc is review-only.
-            </p>
-            <p>
-                <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc">
-                    <i class="fas fa-search"></i> Scan Control Center settings
-                </button>
-                <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary" disabled>
-                    <i class="fas fa-list"></i> Show scan details
-                </button>
-                <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger" disabled>
-                    <i class="fas fa-wrench"></i> Fix all scanned URLs
-                </button>
-            </p>
-            <div id="legacy-url-cc-settings-stats" class="row"></div>
-            <div id="legacy-url-cc-settings-diagnostics" class="mt-3 text-muted"></div>
-            <details class="mt-3 small text-muted">
-                <summary>Scanned Control Center settings</summary>
-                <div id="legacy-url-cc-settings-fields" class="mt-2"></div>
-            </details>
-        </div>
-    </div>
+    <ul class="nav nav-tabs" id="legacy-url-cc-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="legacy-url-cc-project-tab" data-bs-toggle="tab"
+                    data-bs-target="#legacy-url-cc-project-pane" type="button" role="tab"
+                    aria-controls="legacy-url-cc-project-pane" aria-selected="true">
+                Project configuration
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="legacy-url-cc-settings-tab" data-bs-toggle="tab"
+                    data-bs-target="#legacy-url-cc-settings-pane" type="button" role="tab"
+                    aria-controls="legacy-url-cc-settings-pane" aria-selected="false">
+                Control Center settings
+            </button>
+        </li>
+    </ul>
 
-    <div id="legacy-url-cc-settings-details-result" class="card mt-3" style="display:none">
-        <div class="card-header"><strong>Control Center settings scan details</strong></div>
-        <div class="card-body">
-            <div id="legacy-url-cc-settings-details-note" class="small text-muted mb-2"></div>
+    <div class="tab-content pt-3" id="legacy-url-cc-tab-content">
+        <div class="tab-pane fade show active" id="legacy-url-cc-project-pane" role="tabpanel"
+             aria-labelledby="legacy-url-cc-project-tab" tabindex="0">
+            <p>
+                Scan one project configuration surface at a time across all non-deleted projects. Each completed scan is
+                cached system-wide as the affected project IDs only. Affected projects have either a repairable
+                legacy URL or a URL requiring review. Use a linked project ID to review and fix project content.
+            </p>
+            <div class="alert alert-info">
+                <strong>Performance:</strong> each button scans one physical table/surface. This avoids a single
+                long-running scan across all project configuration. For a production data-dictionary finding, enter
+                Draft Mode before using the project page; repairs there are limited to <code>redcap_metadata_temp</code>.
+            </div>
             <div class="table-responsive">
-                <table class="table table-sm mb-0">
+                <table class="table table-sm" id="legacy-url-cc-results">
                     <thead>
                         <tr>
-                            <th>Action</th>
-                            <th>Setting</th>
-                            <th>Details</th>
+                            <th>Surface</th>
+                            <th>Cached result</th>
+                            <th class="text-end">Action</th>
                         </tr>
                     </thead>
-                    <tbody id="legacy-url-cc-settings-details-rows"></tbody>
+                    <tbody>
+                        <tr><td colspan="3" class="text-muted">Loading cached scan results…</td></tr>
+                    </tbody>
                 </table>
             </div>
-            <p class="mb-0 mt-3">
-                <button type="button" id="legacy-url-cc-settings-details-more" class="btn btn-secondary btn-sm" style="display:none">
-                    Show more
-                </button>
-            </p>
+        </div>
+
+        <div class="tab-pane fade" id="legacy-url-cc-settings-pane" role="tabpanel"
+             aria-labelledby="legacy-url-cc-settings-tab" tabindex="0">
+            <div id="legacy-url-cc-settings-summary" class="card" style="display:none">
+                <div class="card-header"><strong>Control Center settings</strong></div>
+                <div class="card-body">
+                    <p>
+                        Scan the fixed set of authored system settings stored in <code>redcap_config</code>. These
+                        global settings may be reviewed and fixed here. Their URLs must reference system eDocs
+                        (<code>redcap_edocs_metadata.project_id IS NULL</code>); a project-owned eDoc is review-only.
+                    </p>
+                    <p>
+                        <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc">
+                            <i class="fas fa-search"></i> Scan Control Center settings
+                        </button>
+                        <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary" disabled>
+                            <i class="fas fa-list"></i> Show scan details
+                        </button>
+                        <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger" disabled>
+                            <i class="fas fa-wrench"></i> Fix all scanned URLs
+                        </button>
+                    </p>
+                    <div id="legacy-url-cc-settings-stats" class="row"></div>
+                    <div id="legacy-url-cc-settings-diagnostics" class="mt-3 text-muted"></div>
+                    <details class="mt-3 small text-muted">
+                        <summary>Scanned Control Center settings</summary>
+                        <div id="legacy-url-cc-settings-fields" class="mt-2"></div>
+                    </details>
+                </div>
+            </div>
+
+            <div id="legacy-url-cc-settings-details-result" class="card mt-3" style="display:none">
+                <div class="card-header"><strong>Control Center settings scan details</strong></div>
+                <div class="card-body">
+                    <div id="legacy-url-cc-settings-details-note" class="small text-muted mb-2"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Setting</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="legacy-url-cc-settings-details-rows"></tbody>
+                        </table>
+                    </div>
+                    <p class="mb-0 mt-3">
+                        <button type="button" id="legacy-url-cc-settings-details-more" class="btn btn-secondary btn-sm" style="display:none">
+                            Show more
+                        </button>
+                    </p>
+                </div>
+            </div>
+            <div id="legacy-url-cc-settings-apply-result" class="alert mt-2" style="display:none" role="status"></div>
         </div>
     </div>
-    <div id="legacy-url-cc-settings-apply-result" class="alert mt-2" style="display:none" role="status"></div>
 </div>
 
 <?=$module->initializeJavascriptModuleObject()?>
