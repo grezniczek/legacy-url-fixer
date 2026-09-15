@@ -17,7 +17,10 @@
 		"details",
 		"apply",
 		"control-center-scan",
-		"control-center-status"
+		"control-center-status",
+		"control-center-settings-scan",
+		"control-center-settings-details",
+		"control-center-settings-apply"
 	],
 	"links": {
 		"control-center": [

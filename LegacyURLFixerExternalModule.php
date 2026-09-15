@@ -15,6 +15,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 {
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
+    private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -71,10 +72,28 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $user_id,
         $group_id
     ) {
-        if (in_array($action, ['control-center-scan', 'control-center-status'], true)) {
+        if (in_array($action, [
+            'control-center-scan',
+            'control-center-status',
+            'control-center-settings-scan',
+            'control-center-settings-details',
+            'control-center-settings-apply',
+        ], true)) {
             $this->requireControlCenterAccess();
             if ($action === 'control-center-status') {
                 return $this->getControlCenterScanStatus();
+            }
+            if ($action === 'control-center-settings-scan') {
+                return $this->runControlCenterSettingsScan();
+            }
+            if ($action === 'control-center-settings-details') {
+                $requestedScanId = is_array($payload) ? ($payload['scan_id'] ?? null) : null;
+                $offset = is_array($payload) ? ($payload['offset'] ?? 0) : 0;
+                return $this->getControlCenterSettingsScanDetails($requestedScanId, $offset);
+            }
+            if ($action === 'control-center-settings-apply') {
+                $requestedScanId = is_array($payload) ? ($payload['scan_id'] ?? null) : null;
+                return $this->applyControlCenterSettingsScan($requestedScanId);
             }
             $surfaceId = is_array($payload) ? ($payload['surface_id'] ?? null) : null;
             return $this->runControlCenterScan($surfaceId);
@@ -265,7 +284,310 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 ]
                 : $this->controlCenterScanSummary($cached, $surface);
         }
-        return ['surfaces' => $summaries];
+        return [
+            'surfaces' => $summaries,
+            'settings' => $this->getControlCenterSettingsScanSummary(),
+        ];
+    }
+
+    /**
+     * Scan the fixed set of system-level authored settings. Their URLs must
+     * point to a system e-document (redcap_edocs_metadata.project_id IS NULL),
+     * never to a project-owned e-document.
+     */
+    private function runControlCenterSettingsScan(): array
+    {
+        $settings = $this->getControlCenterSettings();
+        $fieldNames = array_keys($settings);
+        $scan = [
+            'id' => bin2hex(random_bytes(16)),
+            'created_at' => date('c'),
+            'items' => [],
+            'detail_items' => [],
+            'stats' => [
+                'changed_cells' => 0,
+                'changed_urls' => 0,
+                'current_urls' => 0,
+                'issues' => 0,
+                'issues_by_reason' => [],
+                'by_hash_state' => [],
+                'scanned_fields' => $fieldNames,
+            ],
+        ];
+
+        $candidateWhere = $this->getCandidateWhereClause(['value'], '');
+        $sql = 'SELECT `field_name`, `value` FROM `redcap_config`'
+            . ' WHERE `field_name` IN (' . implode(', ', array_fill(0, count($fieldNames), '?')) . ')'
+            . ' AND (' . $candidateWhere['sql'] . ')';
+        $result = $this->query($sql, array_merge($fieldNames, $candidateWhere['params']));
+
+        $this->documentCache = [];
+        while ($row = $result->fetch_assoc()) {
+            $fieldName = $row['field_name'] ?? null;
+            $value = $row['value'] ?? null;
+            if (!is_string($fieldName)
+                || !isset($settings[$fieldName])
+                || !is_string($value)
+                || !$this->containsPotentialUrl($value)) {
+                continue;
+            }
+
+            $upgraded = $this->upgradeText($value, ['system_setting' => true]);
+            $scan['stats']['current_urls'] += $upgraded['current'];
+            $scan['stats']['issues'] += $upgraded['issues'];
+            foreach ($upgraded['issues_by_reason'] as $reason => $count) {
+                $scan['stats']['issues_by_reason'][$reason] = ($scan['stats']['issues_by_reason'][$reason] ?? 0) + $count;
+            }
+            foreach ($upgraded['states'] as $state => $count) {
+                $scan['stats']['by_hash_state'][$state] = ($scan['stats']['by_hash_state'][$state] ?? 0) + $count;
+            }
+
+            if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0) {
+                $scan['detail_items'][] = [
+                    'field_name' => $fieldName,
+                    'checksum' => hash('sha256', $value),
+                ];
+            }
+            if ($upgraded['changed'] === 0) {
+                continue;
+            }
+
+            $scan['items'][] = [
+                'field_name' => $fieldName,
+                'checksum' => hash('sha256', $value),
+                'url_count' => $upgraded['changed'],
+            ];
+            $scan['stats']['changed_cells']++;
+            $scan['stats']['changed_urls'] += $upgraded['changed'];
+        }
+
+        return $this->cacheControlCenterSettingsScan($scan);
+    }
+
+    private function getControlCenterSettingsScanSummary(): array
+    {
+        $scan = $this->getControlCenterSettingsCachedScan();
+        if ($scan === null) {
+            return [
+                'status' => 'not-scanned',
+                'scan_id' => null,
+                'created_at' => null,
+                'stats' => null,
+            ];
+        }
+        return $this->controlCenterSettingsScanSummary($scan);
+    }
+
+    private function cacheControlCenterSettingsScan(array $scan): array
+    {
+        $encoded = json_encode($scan);
+        if ($encoded === false || strlen($encoded) > self::MAX_SCAN_CACHE_BYTES) {
+            throw new \Exception('The Control Center settings scan result is too large to cache safely.');
+        }
+        $this->setSystemSetting(self::CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY, $encoded);
+        return $this->controlCenterSettingsScanSummary($scan);
+    }
+
+    private function getControlCenterSettingsCachedScan(): ?array
+    {
+        $value = $this->getSystemSetting(self::CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY);
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $scan = json_decode($value, true);
+        if (!is_array($scan)
+            || !is_string($scan['id'] ?? null)
+            || !is_string($scan['created_at'] ?? null)
+            || !is_array($scan['items'] ?? null)
+            || !is_array($scan['detail_items'] ?? null)
+            || !is_array($scan['stats'] ?? null)) {
+            return null;
+        }
+        return $scan;
+    }
+
+    private function controlCenterSettingsScanSummary(array $scan): array
+    {
+        return [
+            'status' => 'complete',
+            'scan_id' => $scan['id'],
+            'created_at' => $scan['created_at'],
+            'stats' => $scan['stats'],
+        ];
+    }
+
+    private function getControlCenterSettingsScanDetails($requestedScanId, $offset): array
+    {
+        $scan = $this->getControlCenterSettingsCachedScan();
+        if ($scan === null) {
+            throw new \Exception('No cached Control Center settings scan is available. Run a new scan first.');
+        }
+        if (!is_string($requestedScanId) || !hash_equals($scan['id'], $requestedScanId)) {
+            throw new \Exception('The Control Center settings scan is no longer current. Run a new scan first.');
+        }
+
+        $settings = $this->getControlCenterSettings();
+        $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
+        $detailItems = $scan['detail_items'];
+        $page = array_slice($detailItems, $offset, self::DETAIL_PAGE_SIZE);
+        $details = [];
+        $staleCells = 0;
+        foreach ($page as $item) {
+            $fieldName = $item['field_name'] ?? null;
+            if (!is_string($fieldName)
+                || !isset($settings[$fieldName])
+                || !is_string($item['checksum'] ?? null)) {
+                $details[] = $this->staleControlCenterSettingDetail($fieldName, null, 'The scanned setting is no longer supported.');
+                $staleCells++;
+                continue;
+            }
+
+            $row = $this->query(
+                'SELECT `value` FROM `redcap_config` WHERE `field_name` = ?',
+                [$fieldName]
+            )->fetch_assoc();
+            $value = $row['value'] ?? null;
+            if (!is_string($value)) {
+                $details[] = $this->staleControlCenterSettingDetail($fieldName, $settings[$fieldName], 'The scanned setting no longer exists.');
+                $staleCells++;
+                continue;
+            }
+            if (!hash_equals($item['checksum'], hash('sha256', $value))) {
+                $details[] = $this->staleControlCenterSettingDetail($fieldName, $settings[$fieldName], 'This setting changed after the scan. Run a new scan for an updated preview.');
+                $staleCells++;
+                continue;
+            }
+
+            $upgraded = $this->upgradeText($value, ['system_setting' => true]);
+            foreach ($upgraded['matches'] as $match) {
+                $details[] = [
+                    'state' => $match['state'],
+                    'surface' => $settings[$fieldName],
+                    'table' => 'redcap_config',
+                    'column' => 'value',
+                    'keys' => ['field_name' => $fieldName],
+                    'url' => $match['url'],
+                    'replacement' => $match['replacement'] ?? null,
+                    'reason' => $match['reason'] ?? null,
+                ];
+            }
+        }
+
+        $nextOffset = $offset + count($page);
+        return [
+            'scan_id' => $scan['id'],
+            'details' => $details,
+            'offset' => $offset,
+            'next_offset' => $nextOffset,
+            'has_more' => $nextOffset < count($detailItems),
+            'total_cells' => count($detailItems),
+            'stale_cells' => $staleCells,
+        ];
+    }
+
+    private function applyControlCenterSettingsScan($requestedScanId): array
+    {
+        $scan = $this->getControlCenterSettingsCachedScan();
+        if ($scan === null) {
+            throw new \Exception('No cached Control Center settings scan is available. Run a new scan first.');
+        }
+        if (!is_string($requestedScanId) || !hash_equals($scan['id'], $requestedScanId)) {
+            throw new \Exception('The Control Center settings scan is no longer current. Run a new scan before applying changes.');
+        }
+
+        $settings = $this->getControlCenterSettings();
+        $counts = ['updated_cells' => 0, 'updated_urls' => 0, 'skipped_changed' => 0, 'skipped_no_longer_needed' => 0, 'errors' => 0];
+        $outcomes = [];
+        foreach ($scan['items'] as $item) {
+            $fieldName = $item['field_name'] ?? null;
+            if (!is_string($fieldName) || !isset($settings[$fieldName])) {
+                $counts['errors']++;
+                $outcomes[] = ['field_name' => $fieldName, 'result' => 'skipped-setting-unavailable'];
+                continue;
+            }
+
+            try {
+                $outcome = $this->applyControlCenterSettingItem($item);
+                $outcomes[] = $outcome;
+                if ($outcome['result'] === 'updated') {
+                    $counts['updated_cells']++;
+                    $counts['updated_urls'] += $outcome['url_count'];
+                } elseif ($outcome['result'] === 'skipped-changed') {
+                    $counts['skipped_changed']++;
+                } elseif ($outcome['result'] === 'skipped-no-longer-needed') {
+                    $counts['skipped_no_longer_needed']++;
+                } else {
+                    $counts['errors']++;
+                }
+            } catch (\Throwable $exception) {
+                $counts['errors']++;
+                $outcomes[] = ['field_name' => $fieldName, 'result' => 'error', 'detail' => $exception->getMessage()];
+            }
+        }
+
+        $this->log('Control Center legacy URL repair batch completed', [
+            'scan_id' => substr($scan['id'], 0, 16),
+            'updated_cells' => $counts['updated_cells'],
+            'updated_urls' => $counts['updated_urls'],
+            'outcomes' => $outcomes,
+        ]);
+        $this->setSystemSetting(self::CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY, null);
+
+        return ['scan_id' => $scan['id'], 'counts' => $counts];
+    }
+
+    private function applyControlCenterSettingItem(array $item): array
+    {
+        $fieldName = $item['field_name'] ?? null;
+        if (!is_string($fieldName) || !isset($this->getControlCenterSettings()[$fieldName])) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-setting-unavailable'];
+        }
+        if (!is_string($item['checksum'] ?? null) || !$this->isInteger($item['url_count'] ?? null)) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-schema-changed'];
+        }
+
+        $row = $this->query(
+            'SELECT `value` FROM `redcap_config` WHERE `field_name` = ?',
+            [$fieldName]
+        )->fetch_assoc();
+        $oldValue = $row['value'] ?? null;
+        if (!is_string($oldValue)) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-row-missing'];
+        }
+        if (!hash_equals($item['checksum'], hash('sha256', $oldValue))) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-changed'];
+        }
+
+        $upgraded = $this->upgradeText($oldValue, ['system_setting' => true]);
+        if ($upgraded['changed'] === 0) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-no-longer-needed'];
+        }
+
+        $update = $this->createQuery();
+        $update->add(
+            'UPDATE `redcap_config` SET `value` = ? WHERE `field_name` = ? AND `value` = ?',
+            [$upgraded['value'], $fieldName, $oldValue]
+        );
+        $update->execute();
+        if ($update->affected_rows !== 1) {
+            return ['field_name' => $fieldName, 'url_count' => 0, 'result' => 'skipped-changed'];
+        }
+
+        return ['field_name' => $fieldName, 'url_count' => $upgraded['changed'], 'result' => 'updated'];
+    }
+
+    private function staleControlCenterSettingDetail($fieldName, ?string $label, string $reason): array
+    {
+        return [
+            'state' => 'stale',
+            'surface' => $label ?? 'Control Center setting',
+            'table' => 'redcap_config',
+            'column' => 'value',
+            'keys' => is_string($fieldName) ? ['field_name' => $fieldName] : [],
+            'url' => null,
+            'replacement' => null,
+            'reason' => $reason,
+        ];
     }
 
     private function cacheControlCenterScan(array $scan, array $surface): array
@@ -681,7 +1003,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if ($document === false) {
             return ['state' => 'issue', 'reason' => 'The referenced document no longer exists'];
         }
-        if ((int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)) {
+        if (($project['system_setting'] ?? false) === true && $document['project_id'] !== null) {
+            return ['state' => 'issue', 'reason' => 'System-level settings must reference a system e-document, not a project-owned document'];
+        }
+        if (($project['system_setting'] ?? false) !== true
+            && (int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)) {
             return ['state' => 'issue', 'reason' => 'The referenced document belongs to a different project'];
         }
 
@@ -723,7 +1049,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $sql = 'SELECT e.doc_id, e.project_id, p.__SALT__'
             . ' FROM redcap_edocs_metadata e'
-            . ' INNER JOIN redcap_projects p ON p.project_id = e.project_id'
+            . ' LEFT JOIN redcap_projects p ON p.project_id = e.project_id'
             . ' WHERE e.doc_id = ?';
         $row = $this->query($sql, [$docId])->fetch_assoc();
         $this->documentCache[$documentKey] = $row ?: false;
@@ -837,6 +1163,39 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'scope' => 'direct',
                 'project_filter' => 'p.`status` <> 0 AND p.`draft_mode` = 1',
             ],
+        ];
+    }
+
+    /**
+     * Fixed allow-list of system-level authored HTML, message, and link
+     * settings. These are global redcap_config values, not project surfaces.
+     * The list is derived from the corresponding Control Center editors and
+     * their rendering paths, rather than from arbitrary config values.
+     *
+     * @return array<string, string> field name => display label
+     */
+    private function getControlCenterSettings(): array
+    {
+        return [
+            'homepage_announcement' => 'Homepage announcement',
+            'homepage_custom_text' => 'Homepage custom text',
+            'helpfaq_custom_text' => 'Help & FAQ custom text',
+            'create_project_custom_text' => 'Create-project custom text',
+            'certify_text_create' => 'Create-project certification text',
+            'certify_text_prod' => 'Production-move certification text',
+            'system_offline_message' => 'System offline message',
+            'login_custom_text' => 'Login custom text',
+            'password_recovery_custom_text' => 'Password recovery custom text',
+            'user_access_dashboard_custom_notification' => 'User Access Dashboard notification',
+            'user_custom_expiration_message' => 'User expiration email message',
+            'user_with_sponsor_custom_expiration_message' => 'Sponsored-user expiration email message',
+            'rewards_enablement_message' => 'Rewards enablement message',
+            'pdf_econsent_system_custom_text' => 'e-Consent PDF system custom text',
+            'realtime_webservice_custom_text' => 'Real-time web service custom text',
+            'footer_links' => 'Footer links',
+            'footer_text' => 'Footer text',
+            'acg_alert_system_custom_text' => 'Access Control Group alert text',
+            'custom_project_footer_text' => 'Default custom project footer text',
         ];
     }
 

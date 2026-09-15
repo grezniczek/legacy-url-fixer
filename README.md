@@ -33,4 +33,10 @@ delivery and audit data.
 REDCap super users can also use **Scan legacy image/file URLs** from the Control Center. It scans one
 physical configuration surface at a time across non-deleted projects and caches only the affected PIDs
 for each surface (repairable URLs and URLs requiring review). Each PID links back to the project page;
-the Control Center does not expose URLs, previews, or repair actions.
+the project-surface scanner does not expose URLs, previews, or repair actions.
+
+The Control Center page separately scans a fixed allow-list of authored system settings in
+`redcap_config` and provides details plus repair for those global settings. A system setting URL must
+reference a system e-document (`redcap_edocs_metadata.project_id IS NULL`); a project-owned document is
+reported for review and is never repaired. System-setting repairs use the same optimistic-locking check
+and log their batch summary in the External Module log.
