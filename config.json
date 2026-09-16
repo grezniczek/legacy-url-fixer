@@ -22,6 +22,24 @@
 		"control-center-settings-details",
 		"control-center-settings-apply"
 	],
+	"project-settings": [
+		{
+			"key": "allow-cross-project-edoc-repair",
+			"name": "Allow cross-project e-document URL repairs",
+			"description": "Disabled by default. Enable only for intentional links copied from another project. The URL must still use the configured REDCap host and have an exact valid document hash for the e-document's owning project.",
+			"type": "checkbox",
+			"super-users-only": true
+		}
+	],
+	"system-settings": [
+		{
+			"key": "force-cross-project-edoc-repair",
+			"name": "Force cross-project e-document URL repairs for all projects",
+			"description": "Disabled by default. When enabled, this Control Center setting overrides the project setting and permits verified legacy URLs to reference an e-document owned by another project. The configured REDCap host and exact document hash are still required.",
+			"type": "checkbox",
+			"super-users-only": true
+		}
+	],
 	"links": {
 		"control-center": [
 			{

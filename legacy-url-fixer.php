@@ -39,6 +39,7 @@ ExternalModules::requireDesignRights();
         <div class="card-header"><strong>Scan result</strong></div>
         <div class="card-body">
             <div id="legacy-url-stats" class="row"></div>
+            <div id="legacy-url-repair-policy" class="small text-muted mt-3"></div>
             <div id="legacy-url-surface-results" class="mt-3"></div>
             <div id="legacy-url-skipped-surfaces" class="mt-3 text-muted"></div>
             <details class="mt-3 small text-muted">
@@ -88,6 +89,7 @@ ExternalModules::requireDesignRights();
         const $error = $('#legacy-url-error');
         const $summary = $('#legacy-url-summary');
         const $stats = $('#legacy-url-stats');
+        const $repairPolicy = $('#legacy-url-repair-policy');
         const $surfaces = $('#legacy-url-surface-results');
         const $skippedSurfaces = $('#legacy-url-skipped-surfaces');
         const $scannedColumns = $('#legacy-url-scanned-columns');
@@ -164,6 +166,10 @@ ExternalModules::requireDesignRights();
                 + stat('Valid current URLs', stats.current_urls)
                 + stat('URLs needing review', stats.issues)
             );
+            $repairPolicy.html(scan.allow_cross_project_edoc_repair
+                ? '<strong>Cross-project e-document repair is enabled for this scan.</strong> '
+                    + 'Verified legacy URLs may reference an e-document owned by another project; repaired numeric <code>pid</code> values are normalized to that owner.'
+                : 'Cross-project e-document repair is disabled. URLs referencing an e-document owned by another project require review.');
 
             const rows = Object.keys(stats.surfaces).map(function (key) {
                 const surface = stats.surfaces[key];
@@ -295,8 +301,12 @@ ExternalModules::requireDesignRights();
         });
         $apply.on('click', async function () {
             if (!currentScan || currentScan.stats.changed_cells === 0) return;
+            let confirmationMessage = 'Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.';
+            if (currentScan.allow_cross_project_edoc_repair) {
+                confirmationMessage += ' This scan includes the enabled cross-project e-document repair policy.';
+            }
             const confirmed = await confirmWithSimpleDialog(
-                'Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.',
+                confirmationMessage,
                 'Confirm URL repairs',
                 'Fix URLs'
             );

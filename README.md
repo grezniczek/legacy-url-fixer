@@ -19,9 +19,15 @@ the scan cache.
 The scan recognizes both legacy and current document hashes. A URL is eligible for repair only when
 its supplied legacy hash matches the referenced document ID using the owning project's legacy salt.
 Valid current hashes are counted but not changed. A mismatched ID/hash pair is retained unchanged and
-reported for review; the module never creates a new URL merely because a document ID exists. The
-referenced e-document must also belong to the project containing the URL; cross-project links are
-reported for review and are never repaired, even when their supplied hash is otherwise valid.
+reported for review; the module never creates a new URL merely because a document ID exists. By
+default, the referenced e-document must also belong to the project containing the URL, so
+cross-project links are reported for review. A super user may explicitly enable **Allow
+cross-project e-document URL repairs** in a project's module settings for intentional links copied
+from another project. The Control Center setting **Force cross-project e-document URL repairs for all
+projects** enables the same policy globally and overrides the project setting. Either option still
+requires an exact valid hash using the referenced e-document's owning-project salt; it only relaxes
+the ownership check. When a repaired URL has a numeric `pid` parameter, it is normalized to that
+owning project.
 
 The module scans data dictionary content (development projects, or only `redcap_metadata_temp` while
 a production project is in Draft Mode), surveys, pending survey invitations, alerts, reports,
@@ -43,6 +49,8 @@ and log their batch summary in the External Module log.
 
 ## Changelog
 
-- **0.2.1** — Normalize `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
-- **0.2.0** — Added Control Center surface scans.
-- **0.1.0** — Initial release.
+Version | Description
+------- | ---------------------
+0.3.0   | Added an optional, super-user-only project setting and Control Center override for repairing verified legacy URLs that intentionally reference e-documents owned by another project.<br>Bugfix: Normalized `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
+0.2.0   | Added Control Center surface scans.
+0.1.0   | Initial release.

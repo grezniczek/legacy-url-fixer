@@ -16,6 +16,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
+    private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
+    private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -110,6 +112,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if ($project === null) {
             throw new \Exception('The project could not be found.');
         }
+        $project['allow_cross_project_edoc_repair'] = $this->allowsCrossProjectEdocRepair($projectId);
 
         if ($action === 'scan') {
             return $this->runScan($project);
@@ -162,6 +165,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'created_at' => date('c'),
             'project_status' => (int) $project['status'],
             'draft_mode' => (int) $project['draft_mode'],
+            'allow_cross_project_edoc_repair' => (bool) ($project['allow_cross_project_edoc_repair'] ?? false),
             'items' => [],
             // Like repair items, these are locators and fingerprints only.
             // The current text and URL previews are fetched on demand.
@@ -750,6 +754,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if ((int) $scan['project_status'] !== (int) $project['status'] || (int) $scan['draft_mode'] !== (int) $project['draft_mode']) {
             throw new \Exception('The project’s development/draft state changed since scanning. Run a new scan first.');
         }
+        $this->requireMatchingCrossProjectRepairSetting($scan, $project);
 
         $surfaces = [];
         foreach ($this->getScanSurfaces($project) as $surface) {
@@ -1006,8 +1011,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if (($project['system_setting'] ?? false) === true && $document['project_id'] !== null) {
             return ['state' => 'issue', 'reason' => 'System-level settings must reference a system e-document, not a project-owned document'];
         }
+        if (($project['system_setting'] ?? false) !== true && $document['project_id'] === null) {
+            return ['state' => 'issue', 'reason' => 'Project settings must reference a project-owned e-document'];
+        }
         if (($project['system_setting'] ?? false) !== true
-            && (int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)) {
+            && (int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)
+            && !($project['allow_cross_project_edoc_repair'] ?? false)) {
             return ['state' => 'issue', 'reason' => 'The referenced document belongs to a different project'];
         }
 
@@ -1461,6 +1470,30 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         return $scan;
     }
 
+    private function allowsCrossProjectEdocRepair(int $projectId): bool
+    {
+        return $this->isEnabled($this->getSystemSetting(self::FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING))
+            || $this->isEnabled($this->getProjectSetting(self::ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING, $projectId));
+    }
+
+    private function isEnabled($value): bool
+    {
+        return in_array($value, [true, 1, '1', 'true', 'on'], true);
+    }
+
+    /**
+     * A scan must be re-run after changing the opt-in so its repair list has
+     * been classified under the same ownership policy as its apply request.
+     */
+    private function requireMatchingCrossProjectRepairSetting(array $scan, array $project): void
+    {
+        $scanSetting = (bool) ($scan['allow_cross_project_edoc_repair'] ?? false);
+        $projectSetting = (bool) ($project['allow_cross_project_edoc_repair'] ?? false);
+        if ($scanSetting !== $projectSetting) {
+            throw new \Exception('The cross-project e-document repair setting changed since scanning. Run a new scan first.');
+        }
+    }
+
     private function scanSummary(array $scan): array
     {
         return [
@@ -1468,6 +1501,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'created_at' => $scan['created_at'],
             'project_status' => $scan['project_status'],
             'draft_mode' => $scan['draft_mode'],
+            'allow_cross_project_edoc_repair' => (bool) ($scan['allow_cross_project_edoc_repair'] ?? false),
             'stats' => $scan['stats'],
         ];
     }
@@ -1490,6 +1524,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if ((int) $scan['project_status'] !== (int) $project['status'] || (int) $scan['draft_mode'] !== (int) $project['draft_mode']) {
             throw new \Exception('The project’s development/draft state changed since scanning. Run a new scan first.');
         }
+        $this->requireMatchingCrossProjectRepairSetting($scan, $project);
 
         $detailItems = is_array($scan['detail_items'] ?? null) ? $scan['detail_items'] : [];
         $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
