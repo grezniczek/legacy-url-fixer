@@ -1388,6 +1388,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         );
         $available = [];
         while ($row = $result->fetch_assoc()) {
+            // MySQL installations may return INFORMATION_SCHEMA result labels
+            // in uppercase (COLUMN_NAME), while MariaDB typically preserves
+            // the lowercase label used in this query. Normalize the result
+            // keys before reading the alias so schema detection is portable.
+            $row = array_change_key_case($row, CASE_LOWER);
             $name = $row['column_name'] ?? null;
             if (is_string($name)) {
                 $available[$name] = true;
