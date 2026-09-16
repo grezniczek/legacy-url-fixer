@@ -40,3 +40,9 @@ The Control Center page separately scans a fixed allow-list of authored system s
 reference a system e-document (`redcap_edocs_metadata.project_id IS NULL`); a project-owned document is
 reported for review and is never repaired. System-setting repairs use the same optimistic-locking check
 and log their batch summary in the External Module log.
+
+## Changelog
+
+- **0.2.1** — Normalize `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
+- **0.2.0** — Added Control Center surface scans.
+- **0.1.0** — Initial release.
