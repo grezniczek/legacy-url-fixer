@@ -12,8 +12,9 @@ locking: any cell changed after the scan is skipped. The batch writes directly t
 configuration table(s) and saves a CSV outcome log in the project File Repository.
 
 Use **Show scan details** to inspect the location, current URL, and proposed replacement for every
-repair. Review entries show their exact location, URL, and reason instead. Details are read on demand
-and only shown when the cell still matches its scan-time fingerprint, so source text is not stored in
+repair. Review entries show their exact location, URL, and reason instead. Current cross-project URLs
+also appear with their owning project PID so they can be reviewed with the project owners. Details are
+read on demand and only shown when the cell still matches its scan-time fingerprint, so source text is not stored in
 the scan cache.
 
 The scan recognizes both legacy and current document hashes. A URL is eligible for repair only when
@@ -31,8 +32,9 @@ requires an exact valid hash using the referenced e-document's owning-project sa
 the ownership check. When a repaired URL has a numeric `pid` parameter, it is normalized to that
 owning project.
 
-The module scans data dictionary content (development projects, or only `redcap_metadata_temp` while
-a production project is in Draft Mode), surveys, pending survey invitations, alerts, reports,
+The module scans development data dictionaries, `redcap_metadata_temp` while a production project is
+in Draft Mode, and the active production data dictionary for read-only review outside Draft Mode. It
+also scans surveys, pending survey invitations, alerts, reports,
 dashboards, descriptive popups, e-Consent configuration, and Multi-Language Management
 content. It uses a fixed allow-list of HTML-capable columns and checks those names against the
 installed schema; it does not generically scan every text column. The module deliberately does not alter record data or historical/sent
@@ -45,8 +47,9 @@ the project-surface scanner does not expose URLs, previews, or repair actions. A
 completed projects from each new scan. The selected choice is shown with each cached result. The project setting **Done with Legacy URL Fixer
 Control Center scans** excludes that project from new scans and hides it from cached project lists.
 Project-level scans remain available. Cached Control Center results are snapshots: rescan a surface
-after fixing its findings to refresh its list. A production project's active data dictionary can appear
-in a Control Center result even while its project page cannot scan that table until Draft Mode is enabled.
+after fixing its findings to refresh its list. A production project's active data dictionary appears
+as read-only review findings on the project page outside Draft Mode. Enter Draft Mode to repair its
+data dictionary URLs in `redcap_metadata_temp`.
 
 The Control Center page separately scans a fixed allow-list of authored system settings in
 `redcap_config` and provides details plus repair for those global settings. A system setting URL must

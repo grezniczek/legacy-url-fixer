@@ -18,7 +18,8 @@ ExternalModules::requireDesignRights();
     <div class="alert alert-warning">
         <strong>Scope:</strong> This does not inspect record data or historical/sent messages. In a production
         project, data-dictionary changes are made only to <code>redcap_metadata_temp</code> while the project
-        is in Draft Mode; <code>redcap_metadata</code> is never updated by this module for a production project.
+        is in Draft Mode. Outside Draft Mode, findings in the active data dictionary are shown for review;
+        <code>redcap_metadata</code> is never updated by this module for a production project.
     </div>
 
     <p>
@@ -141,7 +142,8 @@ ExternalModules::requireDesignRights();
 
         function setIdle() {
             $scan.prop('disabled', false);
-            $details.prop('disabled', !currentScan || (currentScan.stats.changed_cells === 0 && currentScan.stats.issues === 0));
+            $details.prop('disabled', !currentScan || (currentScan.stats.changed_cells === 0
+                && currentScan.stats.issues === 0 && (currentScan.stats.current_cross_project_urls || 0) === 0));
             $detailsMore.prop('disabled', false);
             $apply.prop('disabled', !currentScan || currentScan.stats.changed_cells === 0);
             $progress.text('');
@@ -238,6 +240,11 @@ ExternalModules::requireDesignRights();
                 } else if (detail.state === 'review') {
                     action = '<span class="badge bg-warning text-dark">Review</span>';
                     contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported URL format') + '</div>'
+                        + urlPreview('Current URL', detail.url);
+                } else if (detail.state === 'current_cross_project') {
+                    action = '<span class="badge bg-info text-dark">Cross-project</span>';
+                    contents = '<div class="mb-1">Current URL to a document in project PID '
+                        + escapeHtml(detail.owner_project_id) + '. Review with the project owners.</div>'
                         + urlPreview('Current URL', detail.url);
                 } else {
                     action = '<span class="badge bg-secondary">Refresh needed</span>';

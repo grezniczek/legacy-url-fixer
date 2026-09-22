@@ -19,6 +19,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const CONTROL_CENTER_SCAN_DONE_SETTING = 'control-center-scan-done';
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
+    private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary URL';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -723,19 +724,25 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 $upgraded = $this->upgradeText($value, $project);
                 $scan['stats']['current_urls'] += $upgraded['current'];
                 $scan['stats']['current_cross_project_urls'] += $upgraded['current_cross_project'];
-                $scan['stats']['issues'] += $upgraded['issues'];
-                $surfaceStats['issues'] += $upgraded['issues'];
+                $readOnlyChanges = ($surface['read_only'] ?? false) ? $upgraded['changed'] : 0;
+                $scan['stats']['issues'] += $upgraded['issues'] + $readOnlyChanges;
+                $surfaceStats['issues'] += $upgraded['issues'] + $readOnlyChanges;
 
                 foreach ($upgraded['issues_by_reason'] as $reason => $count) {
                     $scan['stats']['issues_by_reason'][$reason] = ($scan['stats']['issues_by_reason'][$reason] ?? 0) + $count;
                     $surfaceStats['issues_by_reason'][$reason] = ($surfaceStats['issues_by_reason'][$reason] ?? 0) + $count;
+                }
+                if ($readOnlyChanges > 0) {
+                    $reason = self::DRAFT_MODE_REQUIRED_REASON;
+                    $scan['stats']['issues_by_reason'][$reason] = ($scan['stats']['issues_by_reason'][$reason] ?? 0) + $readOnlyChanges;
+                    $surfaceStats['issues_by_reason'][$reason] = ($surfaceStats['issues_by_reason'][$reason] ?? 0) + $readOnlyChanges;
                 }
 
                 foreach ($upgraded['states'] as $state => $count) {
                     $scan['stats']['by_hash_state'][$state] = ($scan['stats']['by_hash_state'][$state] ?? 0) + $count;
                 }
 
-                if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0) {
+                if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0 || $upgraded['current_cross_project'] > 0) {
                     $scan['detail_items'][] = [
                         'surface' => $surface['id'],
                         'column' => $column,
@@ -744,7 +751,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     ];
                 }
 
-                if ($upgraded['changed'] === 0) {
+                if ($upgraded['changed'] === 0 || ($surface['read_only'] ?? false)) {
                     continue;
                 }
 
@@ -834,6 +841,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
     private function applyItem(array $surface, array $item, array $project): array
     {
+        if ($surface['read_only'] ?? false) {
+            return $this->outcome($item, 'skipped-read-only');
+        }
         $resolved = $this->resolveSurface($surface);
         if ($resolved['surface'] === null) {
             return $this->outcome($item, 'skipped-schema-changed');
@@ -966,6 +976,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 $result['current']++;
                 if ($urlResult['cross_project'] ?? false) {
                     $result['current_cross_project']++;
+                    $result['matches'][] = [
+                        'state' => 'current_cross_project',
+                        'url' => $match[0],
+                        'owner_project_id' => $urlResult['owner_project_id'],
+                    ];
                 }
                 return $match[0];
             }
@@ -1053,7 +1068,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $currentHash = \Files::docIdHash($docId, $document['__SALT__']);
         $legacyHash = \Files::docIdHashLegacy($docId, $document['__SALT__']);
         if (hash_equals($currentHash, $providedHash)) {
-            return ['state' => 'current', 'cross_project' => $crossProject];
+            return [
+                'state' => 'current',
+                'cross_project' => $crossProject,
+                'owner_project_id' => $crossProject ? (int) $document['project_id'] : null,
+            ];
         }
         if (!hash_equals($legacyHash, $providedHash)) {
             return ['state' => 'issue', 'reason' => 'The document hash does not match the document ID'];
@@ -1115,16 +1134,15 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             ['id' => 'multilanguage-ui', 'label' => 'Multi-Language UI text', 'table' => 'redcap_multilanguage_ui' . $multilanguageSuffix, 'keys' => ['project_id', 'lang_id', 'item'], 'columns' => ['translation'], 'scope' => 'direct', 'reset_hash' => true, 'require_unique_locator' => true],
         ];
 
-        if ($metadataTable !== null) {
-            array_unshift($surfaces, [
-                'id' => 'active-metadata',
-                'label' => $metadataTable === 'redcap_metadata_temp' ? 'Draft data dictionary' : 'Data dictionary',
-                'table' => $metadataTable,
-                'keys' => ['project_id', 'field_name'],
-                'columns' => self::DATA_DICTIONARY_COLUMNS,
-                'scope' => 'direct',
-            ]);
-        }
+        array_unshift($surfaces, [
+            'id' => 'active-metadata',
+            'label' => $metadataTable === 'redcap_metadata_temp' ? 'Draft data dictionary' : 'Data dictionary',
+            'table' => $metadataTable ?? 'redcap_metadata',
+            'keys' => ['project_id', 'field_name'],
+            'columns' => self::DATA_DICTIONARY_COLUMNS,
+            'scope' => 'direct',
+            'read_only' => $metadataTable === null,
+        ]);
 
         return $surfaces;
     }
@@ -1586,15 +1604,17 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
             $upgraded = $this->upgradeText($source['value'], $project);
             foreach ($upgraded['matches'] as $match) {
+                $readOnlyRepair = ($surface['read_only'] ?? false) && $match['state'] === 'repair';
                 $details[] = [
-                    'state' => $match['state'],
+                    'state' => $readOnlyRepair ? 'review' : $match['state'],
                     'surface' => $surface['label'],
                     'table' => $surface['table'],
                     'column' => $item['column'],
                     'keys' => $item['keys'],
                     'url' => $match['url'],
-                    'replacement' => $match['replacement'] ?? null,
-                    'reason' => $match['reason'] ?? null,
+                    'replacement' => $readOnlyRepair ? null : ($match['replacement'] ?? null),
+                    'reason' => $readOnlyRepair ? self::DRAFT_MODE_REQUIRED_REASON : ($match['reason'] ?? null),
+                    'owner_project_id' => $match['owner_project_id'] ?? null,
                 ];
             }
         }
