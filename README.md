@@ -64,6 +64,7 @@ and log their batch summary in the External Module log.
 
 Version | Description
 ------- | ---------------------
+0.5.0   | Project scan details now show current cross-project URLs and their owning project IDs. Production project scans report the delivered data dictionary as read-only, alongside the draft dictionary when Draft Mode is on; repairs still target only the draft. Control Center scans the active data dictionary in all projects, including those in Draft Mode, and labels the draft scan more clearly.
 0.4.0   | Added a Control Center option to exclude completed projects; deleted projects remain excluded. Added a project setting to mark projects done and omit them from Control Center scans and cached lists. Aligned Control Center cross-project URL classification with the configured repair policy and added a count of current cross-project URLs to project scans.
 0.3.0   | Added an optional, super-user-only project setting and Control Center override for repairing verified legacy URLs that intentionally reference e-documents owned by another project.<br>Bugfix: Normalized `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
 0.2.0   | Added Control Center surface scans.
