@@ -54,9 +54,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             </div>
             <div class="alert alert-info">
                 <strong>Performance:</strong> each button scans one physical table/surface. This avoids a single
-                long-running scan across all project configuration. A production project page shows active
-                data-dictionary findings for review. Enter Draft Mode before repairing them in
-                <code>redcap_metadata_temp</code>.
+                long-running scan across all project configuration. The active data dictionary scan always
+                reads <code>redcap_metadata</code>, including while Draft Mode is on. The draft data dictionary
+                scan reads <code>redcap_metadata_temp</code> for production projects in Draft Mode. Repairs
+                to the draft must be applied before they replace the active dictionary.
             </div>
             <div class="table-responsive">
                 <table class="table table-sm" id="legacy-url-cc-results">

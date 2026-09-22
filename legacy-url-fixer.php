@@ -18,8 +18,9 @@ ExternalModules::requireDesignRights();
     <div class="alert alert-warning">
         <strong>Scope:</strong> This does not inspect record data or historical/sent messages. In a production
         project, data-dictionary changes are made only to <code>redcap_metadata_temp</code> while the project
-        is in Draft Mode. Outside Draft Mode, findings in the active data dictionary are shown for review;
-        <code>redcap_metadata</code> is never updated by this module for a production project.
+        is in Draft Mode. Findings in the active data dictionary are always shown for review;
+        <code>redcap_metadata</code> is never updated by this module for a production project. Draft changes
+        must be applied before they replace the active dictionary.
     </div>
 
     <p>
@@ -41,7 +42,7 @@ ExternalModules::requireDesignRights();
         <div class="card-body">
             <div id="legacy-url-stats" class="row"></div>
             <div id="legacy-url-repair-policy" class="small text-muted mt-3"></div>
-            <div id="legacy-url-surface-results" class="mt-3"></div>
+            <div id="legacy-url-surface-results" class="mt-3 table-responsive"></div>
             <div id="legacy-url-skipped-surfaces" class="mt-3 text-muted"></div>
             <details class="mt-3 small text-muted">
                 <summary>Scanned tables and columns</summary>
@@ -179,11 +180,14 @@ ExternalModules::requireDesignRights();
                 return '<tr><td>' + escapeHtml(surface.label) + '</td>'
                     + '<td class="text-end">' + escapeHtml(surface.changed_cells) + '</td>'
                     + '<td class="text-end">' + escapeHtml(surface.changed_urls) + '</td>'
+                    + '<td class="text-end">' + escapeHtml(surface.current_urls || 0) + '</td>'
+                    + '<td class="text-end">' + escapeHtml(surface.current_cross_project_urls || 0) + '</td>'
                     + '<td class="text-end">' + escapeHtml(surface.issues) + '</td></tr>';
             });
             $surfaces.html(rows.length === 0 ? '<span class="text-muted">No candidate URLs were found.</span>' :
                 '<table class="table table-sm mb-0"><thead><tr><th>Surface</th><th class="text-end">Cells</th>'
-                + '<th class="text-end">URLs</th><th class="text-end">Review</th></tr></thead><tbody>'
+                + '<th class="text-end">URLs to update</th><th class="text-end">Current</th>'
+                + '<th class="text-end">Current cross-project</th><th class="text-end">Review</th></tr></thead><tbody>'
                 + rows.join('') + '</tbody></table>');
 
             const scannedColumns = stats.scanned_columns || [];

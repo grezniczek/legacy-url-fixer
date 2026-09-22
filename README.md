@@ -33,7 +33,7 @@ the ownership check. When a repaired URL has a numeric `pid` parameter, it is no
 owning project.
 
 The module scans development data dictionaries, `redcap_metadata_temp` while a production project is
-in Draft Mode, and the active production data dictionary for read-only review outside Draft Mode. It
+in Draft Mode, and the active production data dictionary for read-only review in either mode. It
 also scans surveys, pending survey invitations, alerts, reports,
 dashboards, descriptive popups, e-Consent configuration, and Multi-Language Management
 content. It uses a fixed allow-list of HTML-capable columns and checks those names against the
@@ -47,9 +47,12 @@ the project-surface scanner does not expose URLs, previews, or repair actions. A
 completed projects from each new scan. The selected choice is shown with each cached result. The project setting **Done with Legacy URL Fixer
 Control Center scans** excludes that project from new scans and hides it from cached project lists.
 Project-level scans remain available. Cached Control Center results are snapshots: rescan a surface
-after fixing its findings to refresh its list. A production project's active data dictionary appears
-as read-only review findings on the project page outside Draft Mode. Enter Draft Mode to repair its
-data dictionary URLs in `redcap_metadata_temp`.
+after fixing its findings to refresh its list. The Control Center's **Data dictionary (active table)**
+always scans `redcap_metadata`, which remains the delivered dictionary until Draft Mode changes are
+applied. **Draft data dictionary (production projects)** scans `redcap_metadata_temp` while Draft Mode
+is on. With Draft Mode on, the project page reports both tables as separate surfaces, including their
+current URL counts. Active production dictionary findings remain read-only; repairs target only the
+draft copy.
 
 The Control Center page separately scans a fixed allow-list of authored system settings in
 `redcap_config` and provides details plus repair for those global settings. A system setting URL must

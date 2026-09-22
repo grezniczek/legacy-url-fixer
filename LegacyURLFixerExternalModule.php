@@ -20,6 +20,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
     private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary URL';
+    private const DRAFT_CHANGES_PENDING_REASON = 'Repair the draft copy if needed, then apply Draft Mode changes to update this active URL';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -704,6 +705,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'label' => $surface['label'],
                 'changed_cells' => 0,
                 'changed_urls' => 0,
+                'current_urls' => 0,
+                'current_cross_project_urls' => 0,
                 'issues' => 0,
                 'issues_by_reason' => [],
             ];
@@ -724,6 +727,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 $upgraded = $this->upgradeText($value, $project);
                 $scan['stats']['current_urls'] += $upgraded['current'];
                 $scan['stats']['current_cross_project_urls'] += $upgraded['current_cross_project'];
+                $surfaceStats['current_urls'] += $upgraded['current'];
+                $surfaceStats['current_cross_project_urls'] += $upgraded['current_cross_project'];
                 $readOnlyChanges = ($surface['read_only'] ?? false) ? $upgraded['changed'] : 0;
                 $scan['stats']['issues'] += $upgraded['issues'] + $readOnlyChanges;
                 $surfaceStats['issues'] += $upgraded['issues'] + $readOnlyChanges;
@@ -733,7 +738,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     $surfaceStats['issues_by_reason'][$reason] = ($surfaceStats['issues_by_reason'][$reason] ?? 0) + $count;
                 }
                 if ($readOnlyChanges > 0) {
-                    $reason = self::DRAFT_MODE_REQUIRED_REASON;
+                    $reason = $this->getReadOnlyMetadataReason($project);
                     $scan['stats']['issues_by_reason'][$reason] = ($scan['stats']['issues_by_reason'][$reason] ?? 0) + $readOnlyChanges;
                     $surfaceStats['issues_by_reason'][$reason] = ($surfaceStats['issues_by_reason'][$reason] ?? 0) + $readOnlyChanges;
                 }
@@ -1135,22 +1140,36 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         ];
 
         array_unshift($surfaces, [
-            'id' => 'active-metadata',
-            'label' => $metadataTable === 'redcap_metadata_temp' ? 'Draft data dictionary' : 'Data dictionary',
-            'table' => $metadataTable ?? 'redcap_metadata',
+            'id' => $metadataTable === 'redcap_metadata' ? 'active-metadata' : 'active-metadata-live',
+            'label' => $metadataTable === 'redcap_metadata' ? 'Data dictionary' : 'Data dictionary (active table, read-only)',
+            'table' => 'redcap_metadata',
             'keys' => ['project_id', 'field_name'],
             'columns' => self::DATA_DICTIONARY_COLUMNS,
             'scope' => 'direct',
-            'read_only' => $metadataTable === null,
+            'read_only' => $metadataTable !== 'redcap_metadata',
         ]);
+        if ($metadataTable === 'redcap_metadata_temp') {
+            array_splice($surfaces, 1, 0, [[
+                'id' => 'active-metadata',
+                'label' => 'Draft data dictionary',
+                'table' => 'redcap_metadata_temp',
+                'keys' => ['project_id', 'field_name'],
+                'columns' => self::DATA_DICTIONARY_COLUMNS,
+                'scope' => 'direct',
+            ]]);
+        }
 
         return $surfaces;
     }
 
-    /**
-     * Physical tables used by the Control Center scanner. Data dictionary and
-     * Multi-Language tables are split where Draft Mode changes the live table.
-     */
+    private function getReadOnlyMetadataReason(array $project): string
+    {
+        return (int) $project['draft_mode'] === 1
+            ? self::DRAFT_CHANGES_PENDING_REASON
+            : self::DRAFT_MODE_REQUIRED_REASON;
+    }
+
+    /** Physical tables used by the Control Center scanner. */
     private function getControlCenterScanSurfaces(): array
     {
         return [
@@ -1161,13 +1180,10 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'keys' => ['project_id', 'field_name'],
                 'columns' => self::DATA_DICTIONARY_COLUMNS,
                 'scope' => 'direct',
-                // This is read-only. Production repairs are still restricted
-                // to redcap_metadata_temp while a project is in Draft Mode.
-                'project_filter' => '(p.`status` = 0 OR p.`draft_mode` IS NULL OR p.`draft_mode` <> 1)',
             ],
             [
                 'id' => 'data-dictionary-draft',
-                'label' => 'Draft data dictionary (non-development projects in Draft Mode)',
+                'label' => 'Draft data dictionary (production projects)',
                 'table' => 'redcap_metadata_temp',
                 'keys' => ['project_id', 'field_name'],
                 'columns' => self::DATA_DICTIONARY_COLUMNS,
@@ -1613,7 +1629,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     'keys' => $item['keys'],
                     'url' => $match['url'],
                     'replacement' => $readOnlyRepair ? null : ($match['replacement'] ?? null),
-                    'reason' => $readOnlyRepair ? self::DRAFT_MODE_REQUIRED_REASON : ($match['reason'] ?? null),
+                    'reason' => $readOnlyRepair ? $this->getReadOnlyMetadataReason($project) : ($match['reason'] ?? null),
                     'owner_project_id' => $match['owner_project_id'] ?? null,
                 ];
             }
