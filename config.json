@@ -24,6 +24,12 @@
 	],
 	"project-settings": [
 		{
+			"key": "control-center-scan-done",
+			"name": "Done with Legacy URL Fixer Control Center scans",
+			"description": "Exclude this project from future Control Center project-configuration scans and hide it from cached project lists. Project scans and repairs remain available.",
+			"type": "checkbox"
+		},
+		{
 			"key": "allow-cross-project-edoc-repair",
 			"name": "Allow cross-project e-document URL repairs",
 			"description": "Disabled by default. Enable only for intentional links copied from another project. The URL must still use the configured REDCap host and have an exact valid document hash for the e-document's owning project.",

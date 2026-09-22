@@ -164,6 +164,7 @@ ExternalModules::requireDesignRights();
                 stat('Cells to update', stats.changed_cells)
                 + stat('URLs to update', stats.changed_urls)
                 + stat('Valid current URLs', stats.current_urls)
+                + stat('Current cross-project URLs', stats.current_cross_project_urls || 0)
                 + stat('URLs needing review', stats.issues)
             );
             $repairPolicy.html(scan.allow_cross_project_edoc_repair

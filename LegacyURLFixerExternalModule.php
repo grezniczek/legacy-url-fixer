@@ -16,6 +16,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
+    private const CONTROL_CENTER_SCAN_DONE_SETTING = 'control-center-scan-done';
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
@@ -98,7 +99,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 return $this->applyControlCenterSettingsScan($requestedScanId);
             }
             $surfaceId = is_array($payload) ? ($payload['surface_id'] ?? null) : null;
-            return $this->runControlCenterScan($surfaceId);
+            $ignoreCompleted = is_array($payload) ? ($payload['ignore_completed'] ?? false) : false;
+            return $this->runControlCenterScan($surfaceId, $ignoreCompleted);
         }
 
         if (!is_numeric($project_id)) {
@@ -174,6 +176,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                 'changed_cells' => 0,
                 'changed_urls' => 0,
                 'current_urls' => 0,
+                'current_cross_project_urls' => 0,
                 'issues' => 0,
                 'issues_by_reason' => [],
                 'by_hash_state' => [],
@@ -201,10 +204,13 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
      * records only project IDs: project-level scan and repair remain the place
      * to inspect configuration content.
      */
-    private function runControlCenterScan($surfaceId): array
+    private function runControlCenterScan($surfaceId, $ignoreCompleted): array
     {
         if (!is_string($surfaceId)) {
             throw new \Exception('A Control Center scan surface is required.');
+        }
+        if (!is_bool($ignoreCompleted)) {
+            throw new \Exception('The completed-project scan filter must be a checkbox.');
         }
         $surfaces = [];
         foreach ($this->getControlCenterScanSurfaces() as $surface) {
@@ -221,6 +227,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'status' => 'complete',
             'message' => null,
             'project_ids' => [],
+            'ignore_completed' => $ignoreCompleted,
         ];
         $resolved = $this->resolveSurface($surface);
         if ($resolved['surface'] === null) {
@@ -231,7 +238,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $surface = $resolved['surface'];
         $textColumns = $surface['columns'];
-        $scope = $this->getControlCenterScopeClause($surface);
+        $scope = $this->getControlCenterScopeClause($surface, $ignoreCompleted);
 
         $candidateWhere = $this->getCandidateWhereClause($textColumns, 't');
         $selectColumns = ['p.`project_id` AS `control_center_project_id`'];
@@ -246,18 +253,31 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $this->documentCache = [];
         $affected = [];
+        $projectPolicies = [];
         while ($row = $result->fetch_assoc()) {
             $projectId = $row['control_center_project_id'] ?? null;
             if (!$this->isInteger($projectId) || (int) $projectId < 1) {
                 continue;
             }
             $projectId = (int) $projectId;
+            if (!array_key_exists($projectId, $projectPolicies)) {
+                $projectPolicies[$projectId] = [
+                    'done' => $this->isEnabled($this->framework->getProjectSetting(self::CONTROL_CENTER_SCAN_DONE_SETTING, $projectId)),
+                    'allow_cross_project_edoc_repair' => $this->allowsCrossProjectEdocRepair($projectId),
+                ];
+            }
+            if ($projectPolicies[$projectId]['done']) {
+                continue;
+            }
             foreach ($textColumns as $column) {
                 $value = $row[$column] ?? '';
                 if (!is_string($value) || !$this->containsPotentialUrl($value)) {
                     continue;
                 }
-                $upgraded = $this->upgradeText($value, ['project_id' => $projectId]);
+                $upgraded = $this->upgradeText($value, [
+                    'project_id' => $projectId,
+                    'allow_cross_project_edoc_repair' => $projectPolicies[$projectId]['allow_cross_project_edoc_repair'],
+                ]);
                 if ($upgraded['changed'] > 0 || $upgraded['issues'] > 0) {
                     $affected[$projectId] = true;
                     break;
@@ -285,6 +305,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     'message' => null,
                     'project_ids' => [],
                     'project_count' => 0,
+                    'ignore_completed' => false,
                 ]
                 : $this->controlCenterScanSummary($cached, $surface);
         }
@@ -616,6 +637,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             || !is_string($scan['created_at'] ?? null)
             || !is_string($scan['status'] ?? null)
             || !is_array($scan['project_ids'] ?? null)
+            || ($scan['ignore_deleted'] ?? true) === false
         ) {
             return null;
         }
@@ -633,7 +655,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
     private function controlCenterScanSummary(array $scan, array $surface): array
     {
-        $projectIds = $scan['project_ids'];
+        $projectIds = array_values(array_filter($scan['project_ids'], function (int $projectId): bool {
+            return !$this->isEnabled($this->framework->getProjectSetting(self::CONTROL_CENTER_SCAN_DONE_SETTING, $projectId));
+        }));
         return [
             'surface_id' => $surface['id'],
             'label' => $surface['label'],
@@ -642,6 +666,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'message' => $scan['message'],
             'project_ids' => $projectIds,
             'project_count' => count($projectIds),
+            'ignore_completed' => (bool) ($scan['ignore_completed'] ?? false),
         ];
     }
 
@@ -697,6 +722,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
                 $upgraded = $this->upgradeText($value, $project);
                 $scan['stats']['current_urls'] += $upgraded['current'];
+                $scan['stats']['current_cross_project_urls'] += $upgraded['current_cross_project'];
                 $scan['stats']['issues'] += $upgraded['issues'];
                 $surfaceStats['issues'] += $upgraded['issues'];
 
@@ -927,6 +953,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'value' => $value,
             'changed' => 0,
             'current' => 0,
+            'current_cross_project' => 0,
             'issues' => 0,
             'issues_by_reason' => [],
             'states' => [],
@@ -937,6 +964,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             $urlResult = $this->upgradeUrl($match[0], $project);
             if ($urlResult['state'] === 'current') {
                 $result['current']++;
+                if ($urlResult['cross_project'] ?? false) {
+                    $result['current_cross_project']++;
+                }
                 return $match[0];
             }
             if ($urlResult['state'] === 'issue') {
@@ -1014,16 +1044,16 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if (($project['system_setting'] ?? false) !== true && $document['project_id'] === null) {
             return ['state' => 'issue', 'reason' => 'Project settings must reference a project-owned e-document'];
         }
-        if (($project['system_setting'] ?? false) !== true
-            && (int) $document['project_id'] !== (int) ($project['project_id'] ?? 0)
-            && !($project['allow_cross_project_edoc_repair'] ?? false)) {
+        $crossProject = ($project['system_setting'] ?? false) !== true
+            && (int) $document['project_id'] !== (int) ($project['project_id'] ?? 0);
+        if ($crossProject && !($project['allow_cross_project_edoc_repair'] ?? false)) {
             return ['state' => 'issue', 'reason' => 'The referenced document belongs to a different project'];
         }
 
         $currentHash = \Files::docIdHash($docId, $document['__SALT__']);
         $legacyHash = \Files::docIdHashLegacy($docId, $document['__SALT__']);
         if (hash_equals($currentHash, $providedHash)) {
-            return ['state' => 'current'];
+            return ['state' => 'current', 'cross_project' => $crossProject];
         }
         if (!hash_equals($legacyHash, $providedHash)) {
             return ['state' => 'issue', 'reason' => 'The document hash does not match the document ID'];
@@ -1247,9 +1277,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
      * Joins a physical surface to non-deleted projects for a system-wide scan.
      * Every SQL fragment originates in the fixed Control Center registry.
      */
-    private function getControlCenterScopeClause(array $surface): array
+    private function getControlCenterScopeClause(array $surface, bool $ignoreCompleted): array
     {
         $projectWhere = 'p.`date_deleted` IS NULL';
+        if ($ignoreCompleted) {
+            $projectWhere .= ' AND p.`completed_time` IS NULL';
+        }
         if (isset($surface['project_filter'])) {
             $projectWhere .= ' AND (' . $surface['project_filter'] . ')';
         }

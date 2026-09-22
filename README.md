@@ -18,7 +18,9 @@ the scan cache.
 
 The scan recognizes both legacy and current document hashes. A URL is eligible for repair only when
 its supplied legacy hash matches the referenced document ID using the owning project's legacy salt.
-Valid current hashes are counted but not changed. A mismatched ID/hash pair is retained unchanged and
+Valid current hashes are counted but not changed. The project scan separately counts current URLs whose
+e-documents belong to another project when cross-project repair is enabled. A current hash does not
+prove that a link into a deleted project is accessible. A mismatched ID/hash pair is retained unchanged and
 reported for review; the module never creates a new URL merely because a document ID exists. By
 default, the referenced e-document must also belong to the project containing the URL, so
 cross-project links are reported for review. A super user may explicitly enable **Allow
@@ -39,7 +41,12 @@ delivery and audit data.
 REDCap super users can also use **Scan legacy image/file URLs** from the Control Center. It scans one
 physical configuration surface at a time across non-deleted projects and caches only the affected PIDs
 for each surface (repairable URLs and URLs requiring review). Each PID links back to the project page;
-the project-surface scanner does not expose URLs, previews, or repair actions.
+the project-surface scanner does not expose URLs, previews, or repair actions. A checkbox can exclude
+completed projects from each new scan. The selected choice is shown with each cached result. The project setting **Done with Legacy URL Fixer
+Control Center scans** excludes that project from new scans and hides it from cached project lists.
+Project-level scans remain available. Cached Control Center results are snapshots: rescan a surface
+after fixing its findings to refresh its list. A production project's active data dictionary can appear
+in a Control Center result even while its project page cannot scan that table until Draft Mode is enabled.
 
 The Control Center page separately scans a fixed allow-list of authored system settings in
 `redcap_config` and provides details plus repair for those global settings. A system setting URL must
@@ -51,6 +58,7 @@ and log their batch summary in the External Module log.
 
 Version | Description
 ------- | ---------------------
+0.4.0   | Added a Control Center option to exclude completed projects; deleted projects remain excluded. Added a project setting to mark projects done and omit them from Control Center scans and cached lists. Aligned Control Center cross-project URL classification with the configured repair policy and added a count of current cross-project URLs to project scans.
 0.3.0   | Added an optional, super-user-only project setting and Control Center override for repairing verified legacy URLs that intentionally reference e-documents owned by another project.<br>Bugfix: Normalized `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
 0.2.0   | Added Control Center surface scans.
 0.1.0   | Initial release.

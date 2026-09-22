@@ -43,10 +43,15 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         <div class="tab-pane fade show active" id="legacy-url-cc-project-pane" role="tabpanel"
              aria-labelledby="legacy-url-cc-project-tab" tabindex="0">
             <p>
-                Scan one project configuration surface at a time across all non-deleted projects. Each completed scan is
+                Scan one project configuration surface at a time across non-deleted projects. Each completed scan is
                 cached system-wide as the affected project IDs only. Affected projects have either a repairable
                 legacy URL or a URL requiring review. Use a linked project ID to review and fix project content.
+                Mark a project done in its module settings to omit it from Control Center results.
             </p>
+            <div class="mb-3">
+                <label><input type="checkbox" id="legacy-url-cc-ignore-completed"> Ignore completed projects</label>
+                <div class="small text-muted">This choice applies to the next scan of each surface. Cached results show the choice used when scanned.</div>
+            </div>
             <div class="alert alert-info">
                 <strong>Performance:</strong> each button scans one physical table/surface. This avoids a single
                 long-running scan across all project configuration. For a production data-dictionary finding, enter
@@ -137,6 +142,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const $progress = $('#legacy-url-cc-progress');
         const $error = $('#legacy-url-cc-error');
         const $results = $('#legacy-url-cc-results tbody');
+        const $ignoreCompleted = $('#legacy-url-cc-ignore-completed');
         let settingsScan = null;
         let settingsDetailOffset = 0;
         const $settingsSummary = $('#legacy-url-cc-settings-summary');
@@ -246,8 +252,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 } else if (surface.status === 'unavailable') {
                     result = '<span class="text-muted">Unavailable: ' + escapeHtml(surface.message || 'Unknown schema issue') + '</span>';
                 } else {
+                    const scope = surface.ignore_completed ? 'completed excluded' : 'completed included';
                     result = '<div><strong>' + escapeHtml(surface.project_count) + '</strong> affected project(s)'
-                        + '<span class="text-muted small"> · scanned ' + escapeHtml(surface.created_at) + '</span></div>'
+                        + '<span class="text-muted small"> · scanned ' + escapeHtml(surface.created_at)
+                        + ' · ' + escapeHtml(scope) + '</span></div>'
                         + '<div class="small mt-1">PIDs: ' + projectLinks(surface.project_ids) + '</div>';
                 }
                 return '<tr><td>' + escapeHtml(surface.label) + '</td><td>' + result + '</td>'
@@ -261,6 +269,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         function setBusy(message) {
             $refresh.prop('disabled', true);
             $results.find('button').prop('disabled', true);
+            $ignoreCompleted.prop('disabled', true);
             $settingsScan.prop('disabled', true);
             $settingsDetails.prop('disabled', true);
             $settingsDetailsMore.prop('disabled', true);
@@ -272,6 +281,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         function setIdle() {
             $refresh.prop('disabled', false);
             $results.find('button').prop('disabled', false);
+            $ignoreCompleted.prop('disabled', false);
             $settingsScan.prop('disabled', false);
             $settingsDetails.prop('disabled', !settingsScan
                 || ((settingsScan.stats.changed_cells || 0) === 0 && (settingsScan.stats.issues || 0) === 0));
@@ -355,8 +365,12 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         $refresh.on('click', loadStatus);
         $results.on('click', '.legacy-url-cc-scan', function () {
             const surfaceId = $(this).data('surface');
-            setBusy('Scanning this surface across non-deleted projects…');
-            module.ajax('control-center-scan', {surface_id: surfaceId}).then(function () {
+            const ignoreCompleted = $ignoreCompleted.prop('checked');
+            setBusy('Scanning this surface…');
+            module.ajax('control-center-scan', {
+                surface_id: surfaceId,
+                ignore_completed: ignoreCompleted
+            }).then(function () {
                 return module.ajax('control-center-status', {});
             }).then(function (response) {
                 renderStatus(response);
