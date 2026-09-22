@@ -22,8 +22,10 @@ its supplied legacy hash matches the referenced document ID using the owning pro
 Valid current hashes are counted but not changed. The project scan separately counts current URLs whose
 e-documents belong to another project when cross-project repair is enabled. A current hash does not
 prove that a link into a deleted project is accessible. A mismatched ID/hash pair is retained unchanged and
-reported for review; the module never creates a new URL merely because a document ID exists. By
-default, the referenced e-document must also belong to the project containing the URL, so
+reported for review; the module never creates a new URL merely because a document ID exists. The scan
+also reports supported image/file URL patterns whose host does not match this REDCap instance. These
+links may intentionally point to another REDCap installation and are always review-only. By default,
+the referenced e-document must also belong to the project containing the URL, so
 cross-project links are reported for review. A super user may explicitly enable **Allow
 cross-project e-document URL repairs** in a project's module settings for intentional links copied
 from another project. The Control Center setting **Force cross-project e-document URL repairs for all
@@ -64,6 +66,7 @@ and log their batch summary in the External Module log.
 
 Version | Description
 ------- | ---------------------
+0.6.0   | Added detection of supported image/file URLs that point to a different REDCap host. These links are reported for review in project scans, Control Center project scans, and Control Center settings scans, and are never changed automatically.
 0.5.0   | Project scan details now show current cross-project URLs and their owning project IDs. Production project scans report the delivered data dictionary as read-only, alongside the draft dictionary when Draft Mode is on; repairs still target only the draft. Control Center scans the active data dictionary in all projects, including those in Draft Mode, and labels the draft scan more clearly.
 0.4.0   | Added a Control Center option to exclude completed projects; deleted projects remain excluded. Added a project setting to mark projects done and omit them from Control Center scans and cached lists. Aligned Control Center cross-project URL classification with the configured repair policy and added a count of current cross-project URLs to project scans.
 0.3.0   | Added an optional, super-user-only project setting and Control Center override for repairing verified legacy URLs that intentionally reference e-documents owned by another project.<br>Bugfix: Normalized `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.

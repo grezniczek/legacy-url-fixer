@@ -1028,7 +1028,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return ['state' => 'issue', 'reason' => 'The URL cannot be parsed or has no query string'];
         }
         if (!$this->isConfiguredRedcapHost($parts)) {
-            return ['state' => 'ignored'];
+            return ['state' => 'issue', 'reason' => 'The URL points to a different REDCap host'];
         }
 
         parse_str($parts['query'], $parameters);
@@ -1358,18 +1358,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'DataEntry%2Ffile_download.php',
         ];
         $patterns = [];
-        foreach ($this->getConfiguredRedcapHosts() as $host) {
-            foreach (['%://' . $host . '/%', '%://' . $host . ':%/%'] as $hostPrefix) {
-                foreach ($endpoints as $endpoint) {
-                    // The SQL prefilter intentionally accepts both legacy and
-                    // current hash lengths. Exact host, endpoint, ownership,
-                    // and hash validation happens in upgradeUrl().
-                    $patterns[] = $hostPrefix . $endpoint . '%doc_id_hash=%';
-                }
-            }
-        }
-        if ($patterns === []) {
-            throw new \Exception('Could not determine the configured REDCap base or survey URL host.');
+        foreach ($endpoints as $endpoint) {
+            // Accept supported absolute URL shapes from any host so links to
+            // another REDCap instance are reported for review. Exact scheme,
+            // host, endpoint, ownership, and hash validation happens later.
+            $patterns[] = '%://%' . $endpoint . '%doc_id_hash=%';
         }
         $conditions = [];
         $parameters = [];
