@@ -8,6 +8,13 @@ ExternalModules::requireDesignRights();
 <div class="legacy-url-fixer" style="max-width: 960px">
     <h4><i class="fas fa-link"></i> Fix legacy image/file URLs</h4>
 
+    <?php if (isset($Proj->project['status']) && (int) $Proj->project['status'] > 0): ?>
+        <div class="alert alert-info">
+            To fix an issue listed under <strong>Data dictionary (active table)</strong> in this production project,
+            switch to Draft Mode first. Repair the draft dictionary, then apply Draft Mode changes to update the active dictionary.
+        </div>
+    <?php endif; ?>
+
     <p>
         This scans authored project configuration for static <code>DataEntry/image_view.php</code>
         and <code>DataEntry/file_download.php</code> URLs, including survey passthru URLs. It classifies
