@@ -22,7 +22,7 @@ ExternalModules::requireDesignRights();
         cached only as row locators and content fingerprints; it does not cache the text being scanned.
     </p>
 
-    <div class="alert alert-warning">
+    <div class="alert alert-light border py-2">
         <strong>Scope:</strong> This does not inspect record data or historical/sent messages. In a production
         project, data-dictionary changes are made only to <code>redcap_metadata_temp</code> while the project
         is in Draft Mode. Findings in the active data dictionary are always shown for review;
