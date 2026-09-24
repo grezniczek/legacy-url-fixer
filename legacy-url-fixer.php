@@ -80,7 +80,6 @@ ExternalModules::requireDesignRights();
             </p>
         </div>
     </div>
-    <div id="legacy-url-apply-result" class="alert mt-2" style="display:none" role="status"></div>
 </div>
 
 <?=$module->initializeJavascriptModuleObject()?>
@@ -106,7 +105,7 @@ ExternalModules::requireDesignRights();
         const $detailsNote = $('#legacy-url-details-note');
         const $detailsRows = $('#legacy-url-details-rows');
         const $detailsMore = $('#legacy-url-details-more');
-        const $applyResult = $('#legacy-url-apply-result');
+        const repairToastStorageKey = 'legacy-url-fixer-repair-toast';
 
         function escapeHtml(value) {
             return $('<div>').text(value == null ? '' : String(value)).html();
@@ -116,6 +115,28 @@ ExternalModules::requireDesignRights();
             if (typeof error === 'string') return error;
             if (error && typeof error.message === 'string') return error.message;
             return 'The request could not be completed. See the REDCap logs for details.';
+        }
+
+        function reloadWithToast(type, title, message) {
+            sessionStorage.setItem(repairToastStorageKey, JSON.stringify({
+                type: type,
+                title: title,
+                message: message
+            }));
+            window.location.reload();
+        }
+
+        function showPendingRepairToast() {
+            const pendingToast = sessionStorage.getItem(repairToastStorageKey);
+            if (!pendingToast) return;
+
+            sessionStorage.removeItem(repairToastStorageKey);
+            try {
+                const toast = JSON.parse(pendingToast);
+                showToast(escapeHtml(toast.title), escapeHtml(toast.message), toast.type, 5000);
+            } catch (error) {
+                // Ignore malformed one-time toast state.
+            }
         }
 
         function confirmWithSimpleDialog(message, title, confirmLabel) {
@@ -300,7 +321,6 @@ ExternalModules::requireDesignRights();
 
         function runScan() {
             setBusy('Scanning project configuration…');
-            $applyResult.hide();
             $detailsResult.hide();
             $detailsRows.empty();
             $detailsMore.hide();
@@ -346,14 +366,18 @@ ExternalModules::requireDesignRights();
                 } else if (result.audit_error) {
                     message += ' Audit CSV warning: ' + result.audit_error;
                 }
-                $applyResult.removeClass('alert-danger').addClass('alert-success').text(message).show();
-                setIdle();
+                const hasErrors = counts.errors > 0;
+                reloadWithToast(
+                    hasErrors ? 'warning' : 'success',
+                    hasErrors ? 'URL fixes partially applied' : 'URL fixes applied',
+                    message
+                );
             }).catch(function (error) {
-                $applyResult.removeClass('alert-success').addClass('alert-danger').text(errorMessage(error)).show();
-                setIdle();
+                reloadWithToast('error', 'Unable to apply URL fixes', errorMessage(error));
             });
         });
 
+        showPendingRepairToast();
         runScan();
     })(jQuery);
 </script>
