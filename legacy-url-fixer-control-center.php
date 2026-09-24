@@ -14,6 +14,9 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
     <h4><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
 
     <p>
+        <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc">
+            <i class="fas fa-search"></i> Scan all
+        </button>
         <button type="button" id="legacy-url-cc-refresh" class="btn btn-secondary">
             <i class="fas fa-sync"></i> Refresh cached results
         </button>
@@ -53,8 +56,9 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 <div class="small text-muted">This choice applies to the next scan of each surface. Cached results show the choice used when scanned.</div>
             </div>
             <div class="alert alert-info">
-                <strong>Performance:</strong> each button scans one physical table/surface. This avoids a single
-                long-running scan across all project configuration. The active data dictionary scan always
+                <strong>Performance:</strong> each surface button scans one physical table/surface. Use <strong>Scan all</strong>
+                to run every project configuration surface and Control Center settings scan sequentially; the full batch may take a while.
+                The active data dictionary scan always
                 reads <code>redcap_metadata</code>, including while Draft Mode is on. The draft data dictionary
                 scan reads <code>redcap_metadata_temp</code> for production projects in Draft Mode. Repairs
                 to the draft must be applied before they replace the active dictionary.
@@ -140,6 +144,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
         const module = <?=$module->getJavascriptModuleObjectName()?>;
         const projectPluginUrlBase = <?=json_encode($projectPluginUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
+        const $scanAll = $('#legacy-url-cc-scan-all');
         const $refresh = $('#legacy-url-cc-refresh');
         const $progress = $('#legacy-url-cc-progress');
         const $error = $('#legacy-url-cc-error');
@@ -147,6 +152,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const $ignoreCompleted = $('#legacy-url-cc-ignore-completed');
         let settingsScan = null;
         let settingsDetailOffset = 0;
+        let scanSurfaces = [];
         const $settingsSummary = $('#legacy-url-cc-settings-summary');
         const $settingsScan = $('#legacy-url-cc-settings-scan');
         const $settingsDetails = $('#legacy-url-cc-settings-details');
@@ -247,7 +253,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         }
 
         function renderStatus(response) {
-            const rows = (response.surfaces || []).map(function (surface) {
+            scanSurfaces = response.surfaces || [];
+            const rows = scanSurfaces.map(function (surface) {
                 let result;
                 if (surface.status === 'not-scanned') {
                     result = '<span class="text-muted">Not scanned</span>';
@@ -269,6 +276,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         }
 
         function setBusy(message) {
+            $scanAll.prop('disabled', true);
             $refresh.prop('disabled', true);
             $results.find('button').prop('disabled', true);
             $ignoreCompleted.prop('disabled', true);
@@ -281,6 +289,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         }
 
         function setIdle() {
+            $scanAll.prop('disabled', false);
             $refresh.prop('disabled', false);
             $results.find('button').prop('disabled', false);
             $ignoreCompleted.prop('disabled', false);
@@ -365,6 +374,44 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         }
 
         $refresh.on('click', loadStatus);
+        $scanAll.on('click', async function () {
+            const ignoreCompleted = $ignoreCompleted.prop('checked');
+            const failures = [];
+            setBusy('Preparing sequential scans…');
+
+            for (let index = 0; index < scanSurfaces.length; index++) {
+                const surface = scanSurfaces[index];
+                $progress.text('Scanning ' + surface.label + ' (' + (index + 1) + ' of ' + scanSurfaces.length + ')…');
+                try {
+                    await module.ajax('control-center-scan', {
+                        surface_id: surface.surface_id,
+                        ignore_completed: ignoreCompleted
+                    });
+                } catch (error) {
+                    failures.push(surface.label + ': ' + errorMessage(error));
+                }
+            }
+
+            $progress.text('Scanning Control Center settings…');
+            try {
+                await module.ajax('control-center-settings-scan', {});
+            } catch (error) {
+                failures.push('Control Center settings: ' + errorMessage(error));
+            }
+
+            $progress.text('Refreshing cached scan results…');
+            try {
+                const response = await module.ajax('control-center-status', {});
+                renderStatus(response);
+            } catch (error) {
+                failures.push('Refreshing results: ' + errorMessage(error));
+            }
+
+            if (failures.length) {
+                $error.text('Some scans failed: ' + failures.join(' | ')).show();
+            }
+            setIdle();
+        });
         $results.on('click', '.legacy-url-cc-scan', function () {
             const surfaceId = $(this).data('surface');
             const ignoreCompleted = $ignoreCompleted.prop('checked');
