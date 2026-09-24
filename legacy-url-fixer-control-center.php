@@ -13,15 +13,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 <div class="legacy-url-fixer-control-center" style="max-width: 1100px">
     <h4><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
 
-    <p>
-        <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc">
-            <i class="fas fa-search"></i> Scan all
-        </button>
-        <button type="button" id="legacy-url-cc-refresh" class="btn btn-secondary">
-            <i class="fas fa-sync"></i> Refresh cached results
-        </button>
-        <span id="legacy-url-cc-progress" class="ms-2 text-muted" aria-live="polite"></span>
-    </p>
+    <div id="legacy-url-cc-progress" class="small text-muted" aria-live="polite"></div>
 
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
 
@@ -62,11 +54,15 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                     </select>
                 </label>
                 <div class="small text-muted">These choices apply to project configuration scans. Cached results show the activity window used. The Control Center settings scan is not limited by project activity.</div>
+                <div class="small text-muted mt-1">Each surface scan covers one physical table. The sequential Scan all run has been practical even on large REDCap instances.</div>
             </div>
-            <div class="alert alert-info">
-                <strong>Performance:</strong> each surface button scans one physical table/surface. Use <strong>Scan all</strong>
-                to run every project configuration surface and Control Center settings scan sequentially; the full batch may take a while.
-                The active data dictionary scan always
+            <p>
+                <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc">
+                    <i class="fas fa-search"></i> Scan all
+                </button>
+            </p>
+            <div class="alert alert-light border py-2">
+                <strong>Data dictionary scope:</strong> The active data dictionary scan always
                 reads <code>redcap_metadata</code>, including while Draft Mode is on. The draft data dictionary
                 scan reads <code>redcap_metadata_temp</code> for production projects in Draft Mode. Repairs
                 to the draft must be applied before they replace the active dictionary.
@@ -89,6 +85,11 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
         <div class="tab-pane fade" id="legacy-url-cc-settings-pane" role="tabpanel"
              aria-labelledby="legacy-url-cc-settings-tab" tabindex="0">
+            <p>
+                <button type="button" id="legacy-url-cc-refresh" class="btn btn-secondary">
+                    <i class="fas fa-sync"></i> Refresh cached results
+                </button>
+            </p>
             <div id="legacy-url-cc-settings-summary" class="card" style="display:none">
                 <div class="card-header"><strong>Control Center settings</strong></div>
                 <div class="card-body">
