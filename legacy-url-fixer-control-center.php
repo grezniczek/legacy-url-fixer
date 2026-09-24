@@ -52,8 +52,16 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 Mark a project done in its module settings to omit it from Control Center results.
             </p>
             <div class="mb-3">
-                <label><input type="checkbox" id="legacy-url-cc-ignore-completed"> Ignore completed projects</label>
-                <div class="small text-muted">This choice applies to the next scan of each surface. Cached results show the choice used when scanned.</div>
+                <label class="me-3"><input type="checkbox" id="legacy-url-cc-ignore-completed"> Ignore completed projects</label>
+                <label for="legacy-url-cc-activity-window">Last project activity:
+                    <select id="legacy-url-cc-activity-window" class="form-select form-select-sm d-inline-block w-auto">
+                        <option value="all">No limit</option>
+                        <option value="3">Within last 3 months</option>
+                        <option value="6">Within last 6 months</option>
+                        <option value="12">Within last 12 months</option>
+                    </select>
+                </label>
+                <div class="small text-muted">These choices apply to project configuration scans. Cached results show the activity window used. The Control Center settings scan is not limited by project activity.</div>
             </div>
             <div class="alert alert-info">
                 <strong>Performance:</strong> each surface button scans one physical table/surface. Use <strong>Scan all</strong>
@@ -150,6 +158,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const $error = $('#legacy-url-cc-error');
         const $results = $('#legacy-url-cc-results tbody');
         const $ignoreCompleted = $('#legacy-url-cc-ignore-completed');
+        const $activityWindow = $('#legacy-url-cc-activity-window');
         let settingsScan = null;
         let settingsDetailOffset = 0;
         let scanSurfaces = [];
@@ -209,6 +218,13 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             }).join(', ');
         }
 
+        function activityWindowLabel(value) {
+            if (value === '3') return 'within last 3 months';
+            if (value === '6') return 'within last 6 months';
+            if (value === '12') return 'within last 12 months';
+            return 'no limit';
+        }
+
         function stat(label, value) {
             return '<div class="col-sm-4 col-lg-3 mb-2"><div class="border rounded p-2">'
                 + '<div class="text-muted small">' + escapeHtml(label) + '</div>'
@@ -261,10 +277,11 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 } else if (surface.status === 'unavailable') {
                     result = '<span class="text-muted">Unavailable: ' + escapeHtml(surface.message || 'Unknown schema issue') + '</span>';
                 } else {
-                    const scope = surface.ignore_completed ? 'completed excluded' : 'completed included';
+                    const completedScope = surface.ignore_completed ? 'completed excluded' : 'completed included';
+                    const activityScope = 'last activity: ' + activityWindowLabel(surface.activity_window);
                     result = '<div><strong>' + escapeHtml(surface.project_count) + '</strong> affected project(s)'
                         + '<span class="text-muted small"> · scanned ' + escapeHtml(surface.created_at)
-                        + ' · ' + escapeHtml(scope) + '</span></div>'
+                        + ' · ' + escapeHtml(completedScope) + ' · ' + escapeHtml(activityScope) + '</span></div>'
                         + '<div class="small mt-1">PIDs: ' + projectLinks(surface.project_ids) + '</div>';
                 }
                 return '<tr><td>' + escapeHtml(surface.label) + '</td><td>' + result + '</td>'
@@ -280,6 +297,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             $refresh.prop('disabled', true);
             $results.find('button').prop('disabled', true);
             $ignoreCompleted.prop('disabled', true);
+            $activityWindow.prop('disabled', true);
             $settingsScan.prop('disabled', true);
             $settingsDetails.prop('disabled', true);
             $settingsDetailsMore.prop('disabled', true);
@@ -293,6 +311,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             $refresh.prop('disabled', false);
             $results.find('button').prop('disabled', false);
             $ignoreCompleted.prop('disabled', false);
+            $activityWindow.prop('disabled', false);
             $settingsScan.prop('disabled', false);
             $settingsDetails.prop('disabled', !settingsScan
                 || ((settingsScan.stats.changed_cells || 0) === 0 && (settingsScan.stats.issues || 0) === 0));
@@ -376,6 +395,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         $refresh.on('click', loadStatus);
         $scanAll.on('click', async function () {
             const ignoreCompleted = $ignoreCompleted.prop('checked');
+            const activityWindow = $activityWindow.val();
             const failures = [];
             setBusy('Preparing sequential scans…');
 
@@ -385,7 +405,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 try {
                     await module.ajax('control-center-scan', {
                         surface_id: surface.surface_id,
-                        ignore_completed: ignoreCompleted
+                        ignore_completed: ignoreCompleted,
+                        activity_window: activityWindow
                     });
                 } catch (error) {
                     failures.push(surface.label + ': ' + errorMessage(error));
@@ -415,10 +436,12 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         $results.on('click', '.legacy-url-cc-scan', function () {
             const surfaceId = $(this).data('surface');
             const ignoreCompleted = $ignoreCompleted.prop('checked');
+            const activityWindow = $activityWindow.val();
             setBusy('Scanning this surface…');
             module.ajax('control-center-scan', {
                 surface_id: surfaceId,
-                ignore_completed: ignoreCompleted
+                ignore_completed: ignoreCompleted,
+                activity_window: activityWindow
             }).then(function () {
                 return module.ajax('control-center-status', {});
             }).then(function (response) {

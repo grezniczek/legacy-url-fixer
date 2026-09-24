@@ -17,6 +17,12 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
     private const CONTROL_CENTER_SCAN_DONE_SETTING = 'control-center-scan-done';
+    private const CONTROL_CENTER_ACTIVITY_WINDOWS = [
+        'all' => null,
+        '3' => 3,
+        '6' => 6,
+        '12' => 12,
+    ];
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
     private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary URL';
@@ -102,7 +108,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
             $surfaceId = is_array($payload) ? ($payload['surface_id'] ?? null) : null;
             $ignoreCompleted = is_array($payload) ? ($payload['ignore_completed'] ?? false) : false;
-            return $this->runControlCenterScan($surfaceId, $ignoreCompleted);
+            $activityWindow = is_array($payload) ? ($payload['activity_window'] ?? 'all') : 'all';
+            return $this->runControlCenterScan($surfaceId, $ignoreCompleted, $activityWindow);
         }
 
         if (!is_numeric($project_id)) {
@@ -206,13 +213,16 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
      * records only project IDs: project-level scan and repair remain the place
      * to inspect configuration content.
      */
-    private function runControlCenterScan($surfaceId, $ignoreCompleted): array
+    private function runControlCenterScan($surfaceId, $ignoreCompleted, $activityWindow): array
     {
         if (!is_string($surfaceId)) {
             throw new \Exception('A Control Center scan surface is required.');
         }
         if (!is_bool($ignoreCompleted)) {
             throw new \Exception('The completed-project scan filter must be a checkbox.');
+        }
+        if (!is_string($activityWindow) || !array_key_exists($activityWindow, self::CONTROL_CENTER_ACTIVITY_WINDOWS)) {
+            throw new \Exception('The project activity window is not supported.');
         }
         $surfaces = [];
         foreach ($this->getControlCenterScanSurfaces() as $surface) {
@@ -230,6 +240,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'message' => null,
             'project_ids' => [],
             'ignore_completed' => $ignoreCompleted,
+            'activity_window' => $activityWindow,
         ];
         $resolved = $this->resolveSurface($surface);
         if ($resolved['surface'] === null) {
@@ -240,7 +251,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $surface = $resolved['surface'];
         $textColumns = $surface['columns'];
-        $scope = $this->getControlCenterScopeClause($surface, $ignoreCompleted);
+        $scope = $this->getControlCenterScopeClause($surface, $ignoreCompleted, $activityWindow);
 
         $candidateWhere = $this->getCandidateWhereClause($textColumns, 't');
         $selectColumns = ['p.`project_id` AS `control_center_project_id`'];
@@ -308,6 +319,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     'project_ids' => [],
                     'project_count' => 0,
                     'ignore_completed' => false,
+                    'activity_window' => 'all',
                 ]
                 : $this->controlCenterScanSummary($cached, $surface);
         }
@@ -652,6 +664,11 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $scan['project_ids'] = array_map('intval', array_keys($projectIds));
         sort($scan['project_ids'], SORT_NUMERIC);
         $scan['message'] = is_string($scan['message'] ?? null) ? $scan['message'] : null;
+        $activityWindow = $scan['activity_window'] ?? 'all';
+        $scan['activity_window'] = is_string($activityWindow)
+            && array_key_exists($activityWindow, self::CONTROL_CENTER_ACTIVITY_WINDOWS)
+            ? $activityWindow
+            : 'all';
         return $scan;
     }
 
@@ -669,6 +686,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'project_ids' => $projectIds,
             'project_count' => count($projectIds),
             'ignore_completed' => (bool) ($scan['ignore_completed'] ?? false),
+            'activity_window' => $scan['activity_window'] ?? 'all',
         ];
     }
 
@@ -1311,11 +1329,15 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
      * Joins a physical surface to non-deleted projects for a system-wide scan.
      * Every SQL fragment originates in the fixed Control Center registry.
      */
-    private function getControlCenterScopeClause(array $surface, bool $ignoreCompleted): array
+    private function getControlCenterScopeClause(array $surface, bool $ignoreCompleted, string $activityWindow): array
     {
         $projectWhere = 'p.`date_deleted` IS NULL';
         if ($ignoreCompleted) {
             $projectWhere .= ' AND p.`completed_time` IS NULL';
+        }
+        $activityMonths = self::CONTROL_CENTER_ACTIVITY_WINDOWS[$activityWindow];
+        if ($activityMonths !== null) {
+            $projectWhere .= ' AND p.`last_logged_event` >= DATE_SUB(NOW(), INTERVAL ' . $activityMonths . ' MONTH)';
         }
         if (isset($surface['project_filter'])) {
             $projectWhere .= ' AND (' . $surface['project_filter'] . ')';
