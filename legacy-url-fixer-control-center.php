@@ -13,8 +13,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 <div class="legacy-url-fixer-control-center" style="max-width: 1100px">
     <h4><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
 
-    <div id="legacy-url-cc-progress" class="small text-muted" aria-live="polite"></div>
-
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
 
     <ul class="nav nav-tabs" id="legacy-url-cc-tabs" role="tablist">
@@ -60,6 +58,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc">
                     <i class="fas fa-search"></i> Scan all
                 </button>
+                <span id="legacy-url-cc-progress" class="small text-muted ms-2" aria-live="polite"></span>
             </p>
             <div class="alert alert-light border py-2">
                 <strong>Data dictionary scope:</strong> The active data dictionary scan always
@@ -85,11 +84,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
         <div class="tab-pane fade" id="legacy-url-cc-settings-pane" role="tabpanel"
              aria-labelledby="legacy-url-cc-settings-tab" tabindex="0">
-            <p>
-                <button type="button" id="legacy-url-cc-refresh" class="btn btn-secondary">
-                    <i class="fas fa-sync"></i> Refresh cached results
-                </button>
-            </p>
             <div id="legacy-url-cc-settings-summary" class="card" style="display:none">
                 <div class="card-header"><strong>Control Center settings</strong></div>
                 <div class="card-body">
@@ -102,6 +96,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                         <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc">
                             <i class="fas fa-search"></i> Scan Control Center settings
                         </button>
+                        <span id="legacy-url-cc-settings-progress" class="small text-muted ms-2" aria-live="polite"></span>
                         <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary" disabled>
                             <i class="fas fa-list"></i> Show scan details
                         </button>
@@ -154,8 +149,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const module = <?=$module->getJavascriptModuleObjectName()?>;
         const projectPluginUrlBase = <?=json_encode($projectPluginUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
         const $scanAll = $('#legacy-url-cc-scan-all');
-        const $refresh = $('#legacy-url-cc-refresh');
-        const $progress = $('#legacy-url-cc-progress');
+        const $progress = $('#legacy-url-cc-progress, #legacy-url-cc-settings-progress');
         const $error = $('#legacy-url-cc-error');
         const $results = $('#legacy-url-cc-results tbody');
         const $ignoreCompleted = $('#legacy-url-cc-ignore-completed');
@@ -295,7 +289,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
         function setBusy(message) {
             $scanAll.prop('disabled', true);
-            $refresh.prop('disabled', true);
             $results.find('button').prop('disabled', true);
             $ignoreCompleted.prop('disabled', true);
             $activityWindow.prop('disabled', true);
@@ -309,7 +302,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
         function setIdle() {
             $scanAll.prop('disabled', false);
-            $refresh.prop('disabled', false);
             $results.find('button').prop('disabled', false);
             $ignoreCompleted.prop('disabled', false);
             $activityWindow.prop('disabled', false);
@@ -393,7 +385,6 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             });
         }
 
-        $refresh.on('click', loadStatus);
         $scanAll.on('click', async function () {
             const ignoreCompleted = $ignoreCompleted.prop('checked');
             const activityWindow = $activityWindow.val();
