@@ -1,99 +1,105 @@
 # Legacy URL Fixer
 
-Repairs static `DataEntry/image_view.php` and `DataEntry/file_download.php` URLs after REDCap changed
-its document-hash generation in September 2026.
+Legacy URL Fixer finds and repairs stored REDCap image and download links whose document hashes use the algorithm replaced in September 2026. It covers authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies.
+
+The module changes a URL only when it can verify the referenced e-document, its owning project, and the supplied legacy hash. Links it cannot verify are listed for review.
+
+## Getting started
+
+Install and enable the module as a REDCap External Module. Its configuration requires External Module Framework version 16. The `_v9.9.9` directory name in this development checkout is a development convention, not a release version. Project-page scans and repairs require Design rights in that project; Control Center actions require a REDCap super user.
+
+- **For one project:** Open **Fix legacy image/file URLs** from the project's External Modules menu. The page scans automatically. Review **Show scan details**, optionally **Download CSV**, then use **Fix all scanned URLs** for the repairable findings.
+- **Across projects:** A REDCap super user can open **Scan legacy image/file URLs** in the Control Center. The **Project configuration** tab identifies affected project IDs; follow a project link to inspect and fix its content.
+- **For global settings or Community Sites:** Use the corresponding Control Center tab to scan, review details, and fix verified legacy URLs there.
+
+After a repair, run a fresh scan to see the current state. The project page reloads and shows a result toast; the Control Center tabs provide a **Rescan** or scan button.
+
+## Scan areas
+
+| Area | What it scans | Where repairs happen |
+| --- | --- | --- |
+| Project page | Authored configuration belonging to one project | On the project page |
+| Control Center: Project configuration | One physical project-configuration table at a time across non-deleted projects | On each linked project page |
+| Control Center: Control Center settings | A fixed list of authored `redcap_config` values | In that tab |
+| Control Center: Community Sites | The `body` column of discovered Community Platform posts tables | In that tab |
+
+Project configuration includes data dictionaries, survey settings, automated survey invitations, pending survey invitations, alerts, reports, project and record dashboards, descriptive popups, e-Consent settings, and Multi-Language Management content. The module uses a fixed list of content columns and checks that each exists in the installed REDCap schema. It does not scan every text column.
+
+The project and Control Center configuration scans exclude ordinary record data and historical or sent delivery and audit data. The pending invitation scan only considers invitations that have not been sent. Community Site post bodies are a separate, explicit scan area.
+
+### Data dictionaries and Draft Mode
+
+| Project state | Scanned dictionary | Repair behavior |
+| --- | --- | --- |
+| Development | Active `redcap_metadata` | Verified legacy URLs can be repaired. |
+| Production, not in Draft Mode | Active `redcap_metadata` | Findings are shown for review; enter Draft Mode to repair the draft copy. |
+| Production, in Draft Mode | Active `redcap_metadata` and draft `redcap_metadata_temp` | The active copy is read-only. Verified legacy URLs in the draft can be repaired; apply the Draft Mode changes to update the active dictionary. |
+
+The Control Center **Data dictionary (active table)** scan always reads `redcap_metadata`. Its separate **Draft data dictionary (production projects)** scan reads `redcap_metadata_temp` only for production projects in Draft Mode.
+
+### Control Center project scanning
+
+The **Project configuration** tab caches affected project IDs for each surface, not URLs or repair previews. A project appears when a scanned surface contains a repairable URL or one needing review. The linked project page provides the details and repair action.
+
+You can scan one surface or use **Scan all** to run the project surfaces in sequence and then scan Control Center settings. **Scan all does not scan Community Sites**; open that tab to scan them. The **Ignore completed projects** checkbox excludes projects with a REDCap completion time from new scans. The activity filter can limit scans to projects active in the last 3, 6, or 12 months, or apply no limit. Neither filter limits the global settings scan. The project setting **Done with Legacy URL Fixer Control Center scans** hides that project from new and cached Control Center project lists; its project page remains available.
+
+These lists are snapshots. Rescan a surface after project repairs to refresh its affected project IDs.
+
+### Control Center settings
+
+This tab scans a fixed list of authored system settings in `redcap_config`, including custom homepage, login, help, footer, notification, and e-Consent text. Scan results, URL details, CSV export, and repair are available in the tab.
+
+A global setting's URL must reference a system e-document (`redcap_edocs_metadata.project_id IS NULL`). A project-owned e-document in a global setting is listed for review and is not repaired. **Scan all** on the Project configuration tab includes this settings scan.
+
+### Community Sites
+
+The **Community Sites** tab looks for matching `<prefix>_posts` and `<prefix>_posts_attachments` tables. It associates a table pair with a setup project only when the project has `site_url`, `site_version`, `table_prefix`, and `tables_created` fields in `redcap_metadata`, and its `CONFIG` record contains the matching `table_prefix`. The lookup uses the project's assigned REDCap data table.
+
+The tab scans `<prefix>_posts.body`, the Community Platform's rich-text post content. The attachments table stores document IDs rather than URL text. A site without exactly one matching setup project is still scanned for review, but its URLs cannot be repaired automatically.
+
+The first visit to the tab runs a scan if none is cached. Use **Rescan** to refresh it. Results show separate update, current, and review counts for each site. **Show all scan details** covers all sites; a site's **Details** button limits the view and CSV export to that site. **Fix all scanned URLs** applies verified repairs across the matched sites in the cached scan.
+
+## Understanding results
+
+The scanner recognizes absolute `DataEntry/image_view.php` and `DataEntry/file_download.php` links, including survey passthru links. It checks the configured REDCap host, the static document ID, the referenced e-document, project ownership, and the supplied `doc_id_hash`.
+
+| Result | Meaning | Automatic change |
+| --- | --- | --- |
+| **Will update** | The supplied hash exactly matches REDCap's legacy hash for the document and the ownership policy permits repair. | The URL receives the current hash. |
+| **Current** | The hash already matches the current algorithm. | None. |
+| **Review** | A host, document, hash, ownership, or read-only rule prevents a safe repair. | None. |
+| **Refresh needed** | The stored cell changed or became unavailable after the scan. | None; rescan to inspect its current value. |
+
+A project scan also counts **Current cross-project URLs** when cross-project repair is enabled. Details identify the owning project for review. A current hash alone does not prove a link into a deleted project is accessible.
+
+**Cells to update** counts stored text values; **URLs to update** counts repairable links within them. One cell, such as a Community post body, can contain several URLs. **Fix all scanned URLs** repairs every eligible URL in each selected cell. There is currently no per-link repair button.
+
+Links to another REDCap host, missing documents, invalid ID/hash pairs, system links to project-owned documents, and disallowed cross-project links stay unchanged. The module does not generate a replacement merely because a document ID exists. When a verified download URL has companion hash parameters, the repair updates them as needed; a numeric `pid` parameter is normalized to the e-document's owning project.
+
+## Repair safeguards and audit
+
+Repairs use the cached scan ID, re-read each source cell, and compare it with the scan-time SHA-256 fingerprint before writing. Changed cells are skipped. The module also rechecks the current project state, schema, and applicable ownership policy. Community Site repairs recheck the table-to-project match. A repair request can therefore finish with a mix of updated and skipped cells.
+
+- **Project repairs:** A CSV batch audit is saved to the project File Repository. The result toast reports its document ID or an audit warning. The module also writes a batch summary to its log.
+- **Control Center settings and Community Site repairs:** Batch counts and outcomes are written to the External Module log.
+- **Scan-details Download CSV:** This is a review export, separate from the repair audit. It fetches every detail page and writes one row per URL or stale item, including locations, proposed replacements, and review reasons. Values that resemble spreadsheet formulas are exported as text. Community exports follow the selected site filter.
+
+Cached scan data contains row locators and fingerprints rather than source text or URL previews. Detail views re-read the source on demand. Project scans use project settings for their cache; Control Center and Community scans use system settings. A completed scan remains a snapshot until you rescan, and repairs invalidate the corresponding repair cache.
+
+## Cross-project e-documents
+
+By default, project and Community Site URLs must reference e-documents owned by their associated project. A super user can enable **Allow cross-project e-document URL repairs** for one project, or **Force cross-project e-document URL repairs for all projects** as a Control Center setting. The system setting overrides the project setting.
+
+Use these options only for intentional links copied from another project. They relax the ownership rule; they do not relax the configured-host or exact legacy-hash checks. Rescan after changing either option so repairs use the current policy.
+
+## Troubleshooting
+
+- **A finding needs review:** Open scan details for the exact URL and reason. The module leaves it unchanged.
+- **A finding is marked “Refresh needed” or was skipped as changed:** Rescan. The stored text no longer matches the scan-time fingerprint.
+- **A production data-dictionary URL cannot be fixed:** Enter Draft Mode, repair the draft dictionary, then apply the Draft Mode changes.
+- **A Community Site has no matching setup project:** Check the four metadata fields and the `table_prefix` value in that project's `CONFIG` record. An ambiguous or missing match disables automatic repair for that site.
+- **A Control Center project list still shows a repaired project:** Rescan the relevant surface. Cached project lists do not refresh when a project repair finishes.
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 Developed with assistance from OpenAI Codex.
-
-Use **Fix legacy image/file URLs** from a project's External Modules menu. Opening the page scans the
-project's authored configuration, classifies both legacy and current document hashes, caches only row
-locators and SHA-256 fingerprints, and shows the pending repairs. Applying a scan uses optimistic
-locking: any cell changed after the scan is skipped. The batch writes directly to the relevant
-configuration table(s) and saves a CSV outcome log in the project File Repository. After a repair
-request completes, the project page reloads and shows a toast with the result, including partial
-failures or an error message when the request fails.
-
-Use **Show scan details** to inspect the location, current URL, and proposed replacement for every
-repair. Review entries show their exact location, URL, and reason instead. Current cross-project URLs
-also appear with their owning project PID so they can be reviewed with the project owners. Details are
-read on demand and only shown when the cell still matches its scan-time fingerprint, so source text is not stored in
-the scan cache. Each scan details table offers **Download CSV**, which retrieves every detail page
-and exports one row per URL or stale item. Exported values that look like spreadsheet formulas are
-written as text.
-
-The scan recognizes both legacy and current document hashes. A URL is eligible for repair only when
-its supplied legacy hash matches the referenced document ID using the owning project's legacy salt.
-Valid current hashes are counted but not changed. The project scan separately counts current URLs whose
-e-documents belong to another project when cross-project repair is enabled. A current hash does not
-prove that a link into a deleted project is accessible. A mismatched ID/hash pair is retained unchanged and
-reported for review; the module never creates a new URL merely because a document ID exists. The scan
-also reports supported image/file URL patterns whose host does not match this REDCap instance. These
-links may intentionally point to another REDCap installation and are always review-only. By default,
-the referenced e-document must also belong to the project containing the URL, so
-cross-project links are reported for review. A super user may explicitly enable **Allow
-cross-project e-document URL repairs** in a project's module settings for intentional links copied
-from another project. The Control Center setting **Force cross-project e-document URL repairs for all
-projects** enables the same policy globally and overrides the project setting. Either option still
-requires an exact valid hash using the referenced e-document's owning-project salt; it only relaxes
-the ownership check. When a repaired URL has a numeric `pid` parameter, it is normalized to that
-owning project.
-
-The module scans development data dictionaries, `redcap_metadata_temp` while a production project is
-in Draft Mode, and the active production data dictionary for read-only review in either mode. On the
-project page, a production-only reminder explains that users must enter Draft Mode to repair draft
-dictionary content and apply the changes to update the active dictionary. It
-also scans surveys, pending survey invitations, alerts, reports,
-dashboards, descriptive popups, e-Consent configuration, and Multi-Language Management
-content. It uses a fixed allow-list of HTML-capable columns and checks those names against the
-installed schema; it does not generically scan every text column. The module deliberately does not alter record data or historical/sent
-delivery and audit data.
-
-REDCap super users can also use **Scan legacy image/file URLs** from the Control Center. It scans one
-physical configuration surface at a time across non-deleted projects and caches only the affected PIDs
-for each surface (repairable URLs and URLs requiring review). Each PID links back to the project page;
-the project-surface scanner does not expose URLs, previews, or repair actions. A checkbox can exclude
-completed projects from each new scan. A last-activity filter can limit project configuration scans to projects
-with activity in the last 3, 6, or 12 months, based on `redcap_projects.last_logged_event`, or leave activity
-unlimited. Both selected choices are shown with each cached result. **Scan all** runs every project configuration
-surface in sequence and then scans Control Center settings; individual scan controls are disabled while it runs.
-The activity filter does not limit the global settings scan. The project setting **Done with Legacy URL Fixer
-Control Center scans** excludes that project from new scans and hides it from cached project lists.
-Project-level scans remain available. Cached Control Center results are snapshots: rescan a surface
-after fixing its findings to refresh its list. The Control Center's **Data dictionary (active table)**
-always scans `redcap_metadata`, which remains the delivered dictionary until Draft Mode changes are
-applied. **Draft data dictionary (production projects)** scans `redcap_metadata_temp` while Draft Mode
-is on. With Draft Mode on, the project page reports both tables as separate surfaces, including their
-current URL counts. Active production dictionary findings remain read-only; repairs target only the
-draft copy.
-
-The Control Center page separately scans a fixed allow-list of authored system settings in
-`redcap_config` and provides details plus repair for those global settings. **Scan all** includes this settings
-scan after the project configuration surfaces. A system setting URL must
-reference a system e-document (`redcap_edocs_metadata.project_id IS NULL`); a project-owned document is
-reported for review and is never repaired. System-setting repairs use the same optimistic-locking check
-and log their batch summary in the External Module log.
-
-The Control Center **Community Sites** tab discovers tables with matching `<prefix>_posts` and
-`<prefix>_posts_attachments` names. It matches a site to a project only when that project has all four
-Community setup fields (`site_url`, `site_version`, `table_prefix`, and `tables_created`) in
-`redcap_metadata` and its `CONFIG` record has exactly that table prefix. Sites without one unique
-match are scanned for review but cannot be repaired. The tab scans on first access, caches the
-results system-wide, and has an explicit **Rescan** button. It checks `<prefix>_posts.body`, which is
-the Community Platform's rich-text post content; the attachment table stores document IDs rather
-than URL text. A site row shows separate update, current, and review counts. Details are read on
-demand across all sites or for one site at a time. Repairs recheck the setup-project match, ownership
-policy, and the post body's scan-time fingerprint before updating the body. Batch outcomes are recorded in
-the External Module log.
-
-## Changelog
-
-Version | Description
-------- | ---------------------
-Unreleased | Added Community Site discovery and post-body scan, preview, and repair in a new Control Center tab.
-0.7.0   | Added a production-project Draft Mode reminder and automatic page reload with a repair-result toast. Added sequential Control Center **Scan all** and a last-activity filter for project scans (no limit, 3, 6, or 12 months); cached results record the selected filter.
-0.6.0   | Added detection of supported image/file URLs that point to a different REDCap host. These links are reported for review in project scans, Control Center project scans, and Control Center settings scans, and are never changed automatically.
-0.5.0   | Project scan details now show current cross-project URLs and their owning project IDs. Production project scans report the delivered data dictionary as read-only, alongside the draft dictionary when Draft Mode is on; repairs still target only the draft. Control Center scans the active data dictionary in all projects, including those in Draft Mode, and labels the draft scan more clearly.
-0.4.0   | Added a Control Center option to exclude completed projects; deleted projects remain excluded. Added a project setting to mark projects done and omit them from Control Center scans and cached lists. Aligned Control Center cross-project URL classification with the configured repair policy and added a count of current cross-project URLs to project scans.
-0.3.0   | Added an optional, super-user-only project setting and Control Center override for repairing verified legacy URLs that intentionally reference e-documents owned by another project.<br>Bugfix: Normalized `INFORMATION_SCHEMA` result keys so schema detection works with MySQL installations that return uppercase column labels.
-0.2.0   | Added Control Center surface scans.
-0.1.0   | Initial release.
