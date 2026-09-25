@@ -627,7 +627,13 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             $outcomes[] = $outcome;
         }
         $this->log('Community Site legacy URL repair batch completed', [
-            'scan_id' => substr($scan['id'], 0, 16), 'counts' => $counts, 'outcomes' => $outcomes,
+            'scan_id' => substr($scan['id'], 0, 16),
+            'updated_cells' => $counts['updated_cells'],
+            'updated_urls' => $counts['updated_urls'],
+            'skipped_changed' => $counts['skipped_changed'],
+            'skipped_no_longer_needed' => $counts['skipped_no_longer_needed'],
+            'errors' => $counts['errors'],
+            'outcomes_json' => json_encode($outcomes, JSON_INVALID_UTF8_SUBSTITUTE),
         ]);
         $this->setSystemSetting(self::COMMUNITY_SCAN_CACHE_KEY, null);
         return ['counts' => $counts];
@@ -872,7 +878,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
-            'outcomes' => $outcomes,
+            'outcomes_json' => json_encode($outcomes, JSON_INVALID_UTF8_SUBSTITUTE),
         ]);
         $this->setSystemSetting(self::CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY, null);
 
