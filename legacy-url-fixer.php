@@ -58,7 +58,10 @@ ExternalModules::requireDesignRights();
         </div>
     </div>
     <div id="legacy-url-details-result" class="card mt-3" style="display:none">
-        <div class="card-header"><strong>Scan details</strong></div>
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Scan details</strong>
+            <button type="button" id="legacy-url-details-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+        </div>
         <div class="card-body">
             <div id="legacy-url-details-note" class="small text-muted mb-2"></div>
             <div class="table-responsive">
@@ -83,6 +86,7 @@ ExternalModules::requireDesignRights();
 </div>
 
 <?=$module->initializeJavascriptModuleObject()?>
+<script src="<?=htmlspecialchars($module->getUrl('scan-details-csv.js'), ENT_QUOTES)?>"></script>
 <script>
     (function ($) {
         'use strict';
@@ -105,6 +109,7 @@ ExternalModules::requireDesignRights();
         const $detailsNote = $('#legacy-url-details-note');
         const $detailsRows = $('#legacy-url-details-rows');
         const $detailsMore = $('#legacy-url-details-more');
+        const $detailsCsv = $('#legacy-url-details-csv');
         const repairToastStorageKey = 'legacy-url-fixer-repair-toast';
 
         function escapeHtml(value) {
@@ -164,6 +169,7 @@ ExternalModules::requireDesignRights();
             $scan.prop('disabled', true);
             $details.prop('disabled', true);
             $detailsMore.prop('disabled', true);
+            $detailsCsv.prop('disabled', true);
             $apply.prop('disabled', true);
             $progress.text(message);
             $error.hide();
@@ -174,12 +180,15 @@ ExternalModules::requireDesignRights();
             $details.prop('disabled', !currentScan || (currentScan.stats.changed_cells === 0
                 && currentScan.stats.issues === 0 && (currentScan.stats.current_cross_project_urls || 0) === 0));
             $detailsMore.prop('disabled', false);
+            $detailsCsv.prop('disabled', !currentScan);
             $apply.prop('disabled', !currentScan || currentScan.stats.changed_cells === 0);
             $progress.text('');
         }
 
-        function stat(label, value) {
-            return '<div class="col-sm-4 col-lg-3 mb-2"><div class="border rounded p-2">'
+        function stat(label, value, tint) {
+            const color = tint ? (Number(value) > 0 ? '#fff1f2' : '#edf7ed') : '';
+            return '<div class="col-sm-4 col-lg-3 mb-2"><div class="border rounded p-2"'
+                + (color ? ' style="background-color:' + color + '"' : '') + '>'
                 + '<div class="text-muted small">' + escapeHtml(label) + '</div>'
                 + '<strong>' + escapeHtml(value) + '</strong></div></div>';
         }
@@ -193,10 +202,10 @@ ExternalModules::requireDesignRights();
             const stats = scan.stats;
             $stats.html(
                 stat('Cells to update', stats.changed_cells)
-                + stat('URLs to update', stats.changed_urls)
+                + stat('URLs to update', stats.changed_urls, true)
                 + stat('Valid current URLs', stats.current_urls)
                 + stat('Current cross-project URLs', stats.current_cross_project_urls || 0)
-                + stat('URLs needing review', stats.issues)
+                + stat('URLs needing review', stats.issues, true)
             );
             $repairPolicy.html(scan.allow_cross_project_edoc_repair
                 ? '<strong>Cross-project e-document repair is enabled for this scan.</strong> '
@@ -337,6 +346,33 @@ ExternalModules::requireDesignRights();
         });
         $detailsMore.on('click', function () {
             loadDetails(true);
+        });
+        $detailsCsv.on('click', async function () {
+            if (!currentScan) return;
+            const scanId = currentScan.scan_id;
+            setBusy('Downloading scan details…');
+            try {
+                await LegacyUrlScanCsv.download({
+                    filename: 'legacy-url-project-' + scanId.slice(0, 12) + '.csv',
+                    headers: ['Action', 'Surface', 'Table', 'Column', 'Row key', 'Current URL',
+                        'Replacement URL', 'Reason', 'Owner project ID'],
+                    fetchPage: function (offset) {
+                        return module.ajax('details', {scan_id: scanId, offset: offset});
+                    },
+                    mapDetail: function (detail) {
+                        return [detail.state, detail.surface, detail.table, detail.column,
+                            formatKeys(detail.keys), detail.url, detail.replacement,
+                            detail.reason, detail.owner_project_id];
+                    },
+                    onPage: function (done, total) {
+                        $progress.text('Preparing CSV: ' + done + ' of ' + total + ' scanned cells…');
+                    }
+                });
+                setIdle();
+            } catch (error) {
+                $error.text(errorMessage(error)).show();
+                setIdle();
+            }
         });
         $apply.on('click', async function () {
             if (!currentScan || currentScan.stats.changed_cells === 0) return;

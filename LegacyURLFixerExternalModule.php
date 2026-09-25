@@ -106,7 +106,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             if ($action === 'community-details') {
                 return $this->getCommunityScanDetails(
                     is_array($payload) ? ($payload['scan_id'] ?? null) : null,
-                    is_array($payload) ? ($payload['offset'] ?? 0) : 0
+                    is_array($payload) ? ($payload['offset'] ?? 0) : 0,
+                    is_array($payload) ? ($payload['prefix'] ?? null) : null
                 );
             }
             if ($action === 'community-apply') {
@@ -526,12 +527,21 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         return $scan;
     }
 
-    private function getCommunityScanDetails($requestedScanId, $offset): array
+    private function getCommunityScanDetails($requestedScanId, $offset, $prefix): array
     {
         $scan = $this->requireCommunityScan($requestedScanId);
-        $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
-        $page = array_slice($scan['detail_items'], $offset, self::DETAIL_PAGE_SIZE);
         $sites = array_column($scan['sites'], null, 'prefix');
+        if ($prefix !== null && (!is_string($prefix) || !array_key_exists($prefix, $sites))) {
+            throw new \Exception('The requested Community Site is not in this scan. Rescan and try again.');
+        }
+        $detailItems = $prefix === null ? $scan['detail_items'] : array_values(array_filter(
+            $scan['detail_items'],
+            static function (array $item) use ($prefix): bool {
+                return ($item['prefix'] ?? null) === $prefix;
+            }
+        ));
+        $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
+        $page = array_slice($detailItems, $offset, self::DETAIL_PAGE_SIZE);
         $currentSites = array_column($this->discoverCommunitySites(), null, 'prefix');
         $details = [];
         $stale = 0;
@@ -559,8 +569,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
         $next = $offset + count($page);
         return ['details' => $details, 'offset' => $offset, 'next_offset' => $next,
-            'has_more' => $next < count($scan['detail_items']),
-            'total_cells' => count($scan['detail_items']), 'stale_cells' => $stale];
+            'has_more' => $next < count($detailItems),
+            'total_cells' => count($detailItems), 'stale_cells' => $stale];
     }
 
     private function getCommunityPostBody(string $table, int $postId): ?string

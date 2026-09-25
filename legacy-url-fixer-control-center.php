@@ -119,7 +119,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             </div>
 
             <div id="legacy-url-cc-settings-details-result" class="card mt-3" style="display:none">
-                <div class="card-header"><strong>Control Center settings scan details</strong></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>Control Center settings scan details</strong>
+                    <button type="button" id="legacy-url-cc-settings-details-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+                </div>
                 <div class="card-body">
                     <div id="legacy-url-cc-settings-details-note" class="small text-muted mb-2"></div>
                     <div class="table-responsive">
@@ -153,16 +156,23 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                     <i class="fas fa-search"></i> Rescan
                 </button>
                 <span id="legacy-url-cc-community-progress" class="small text-muted ms-2" aria-live="polite"></span>
-                <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary btn-sm" disabled>Show scan details</button>
+                <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary btn-sm" disabled>Show all scan details</button>
                 <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger btn-sm" disabled>Fix all scanned URLs</button>
             </p>
-            <div id="legacy-url-cc-community-summary" class="mb-3 text-muted">Open this tab to scan.</div>
+            <div id="legacy-url-cc-community-summary" class="mb-2 text-muted">Open this tab to scan.</div>
+            <div id="legacy-url-cc-community-stats" class="row mb-2"></div>
             <div class="table-responsive">
-                <table class="table table-sm"><thead><tr><th>Table prefix</th><th>Setup project</th><th>Post body results</th></tr></thead>
+                <table class="table table-sm"><thead><tr>
+                    <th>Table prefix</th><th>Setup project</th><th>Needs update</th>
+                    <th>Current</th><th>Needs review</th><th class="text-end">Action</th>
+                </tr></thead>
                     <tbody id="legacy-url-cc-community-sites"></tbody></table>
             </div>
             <div id="legacy-url-cc-community-details-result" class="card mt-3" style="display:none">
-                <div class="card-header"><strong>Community Site scan details</strong></div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong id="legacy-url-cc-community-details-title">Community Site scan details</strong>
+                    <button type="button" id="legacy-url-cc-community-details-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+                </div>
                 <div class="card-body">
                     <div id="legacy-url-cc-community-details-note" class="small text-muted mb-2"></div>
                     <div class="table-responsive"><table class="table table-sm mb-0">
@@ -178,6 +188,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 </div>
 
 <?=$module->initializeJavascriptModuleObject()?>
+<script src="<?=htmlspecialchars($module->getUrl('scan-details-csv.js'), ENT_QUOTES)?>"></script>
 <script>
     (function ($) {
         'use strict';
@@ -204,13 +215,16 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const $settingsDetailsNote = $('#legacy-url-cc-settings-details-note');
         const $settingsDetailsRows = $('#legacy-url-cc-settings-details-rows');
         const $settingsDetailsMore = $('#legacy-url-cc-settings-details-more');
+        const $settingsDetailsCsv = $('#legacy-url-cc-settings-details-csv');
         const $settingsApplyResult = $('#legacy-url-cc-settings-apply-result');
         const $communityScan = $('#legacy-url-cc-community-scan');
         const $communityDetails = $('#legacy-url-cc-community-details');
         const $communityApply = $('#legacy-url-cc-community-apply');
         const $communityMore = $('#legacy-url-cc-community-details-more');
+        const $communityDetailsCsv = $('#legacy-url-cc-community-details-csv');
         let communityResult = null;
         let communityOffset = 0;
+        let communityDetailPrefix = null;
         let communityLoaded = false;
 
         function escapeHtml(value) {
@@ -263,8 +277,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             return 'no limit';
         }
 
-        function stat(label, value) {
-            return '<div class="col-sm-4 col-lg-3 mb-2"><div class="border rounded p-2">'
+        function stat(label, value, tint) {
+            const color = tint ? (Number(value) > 0 ? '#fff1f2' : '#edf7ed') : '';
+            return '<div class="col-sm-4 col-lg-3 mb-2"><div class="border rounded p-2"'
+                + (color ? ' style="background-color:' + color + '"' : '') + '>'
                 + '<div class="text-muted small">' + escapeHtml(label) + '</div>'
                 + '<strong>' + escapeHtml(value) + '</strong></div></div>';
         }
@@ -288,9 +304,9 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             const stats = scan.stats || {};
             $settingsStats.html(
                 stat('Settings to update', stats.changed_cells || 0)
-                + stat('URLs to update', stats.changed_urls || 0)
+                + stat('URLs to update', stats.changed_urls || 0, true)
                 + stat('Valid current URLs', stats.current_urls || 0)
-                + stat('URLs needing review', stats.issues || 0)
+                + stat('URLs needing review', stats.issues || 0, true)
             );
             const issueReasons = stats.issues_by_reason || {};
             const issueSummary = Object.keys(issueReasons).map(function (reason) {
@@ -338,10 +354,13 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             $settingsScan.prop('disabled', true);
             $settingsDetails.prop('disabled', true);
             $settingsDetailsMore.prop('disabled', true);
+            $settingsDetailsCsv.prop('disabled', true);
             $settingsApply.prop('disabled', true);
             $communityScan.prop('disabled', true);
             $communityDetails.prop('disabled', true);
             $communityMore.prop('disabled', true);
+            $communityDetailsCsv.prop('disabled', true);
+            $('#legacy-url-cc-community-sites button').prop('disabled', true);
             $communityApply.prop('disabled', true);
             $progress.text(message);
             $error.hide();
@@ -356,10 +375,15 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             $settingsDetails.prop('disabled', !settingsScan
                 || ((settingsScan.stats.changed_cells || 0) === 0 && (settingsScan.stats.issues || 0) === 0));
             $settingsDetailsMore.prop('disabled', false);
+            $settingsDetailsCsv.prop('disabled', !settingsScan);
             $settingsApply.prop('disabled', !settingsScan || (settingsScan.stats.changed_cells || 0) === 0);
             $communityScan.prop('disabled', false);
             $communityDetails.prop('disabled', !communityResult || ((communityResult.stats.changed_cells || 0) === 0 && (communityResult.stats.issues || 0) === 0));
             $communityMore.prop('disabled', false);
+            $communityDetailsCsv.prop('disabled', !communityResult);
+            $('#legacy-url-cc-community-sites button').each(function () {
+                $(this).prop('disabled', !communityResult || Number($(this).data('affected')) === 0);
+            });
             $communityApply.prop('disabled', !communityResult || (communityResult.stats.changed_cells || 0) === 0);
             $progress.text('');
         }
@@ -520,6 +544,33 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             loadSettingsDetails(true);
         });
 
+        $settingsDetailsCsv.on('click', async function () {
+            if (!settingsScan) return;
+            const scanId = settingsScan.scan_id;
+            setBusy('Downloading Control Center settings details…');
+            try {
+                await LegacyUrlScanCsv.download({
+                    filename: 'legacy-url-settings-' + scanId.slice(0, 12) + '.csv',
+                    headers: ['Action', 'Setting', 'Table', 'Column', 'Row key', 'Current URL',
+                        'Replacement URL', 'Reason'],
+                    fetchPage: function (offset) {
+                        return module.ajax('control-center-settings-details', {scan_id: scanId, offset: offset});
+                    },
+                    mapDetail: function (detail) {
+                        return [detail.state, detail.surface, detail.table, detail.column,
+                            formatKeys(detail.keys), detail.url, detail.replacement, detail.reason];
+                    },
+                    onPage: function (done, total) {
+                        $progress.text('Preparing CSV: ' + done + ' of ' + total + ' scanned settings…');
+                    }
+                });
+                setIdle();
+            } catch (error) {
+                $error.text(errorMessage(error)).show();
+                setIdle();
+            }
+        });
+
         $settingsApply.on('click', function () {
             if (!settingsScan) return;
             confirmWithSimpleDialog(
@@ -554,10 +605,13 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         function renderCommunity(result) {
             communityResult = result && result.status === 'complete' ? result : null;
             communityOffset = 0;
+            communityDetailPrefix = null;
             $('#legacy-url-cc-community-details-result, #legacy-url-cc-community-apply-result').hide();
             const $rows = $('#legacy-url-cc-community-sites');
+            const $stats = $('#legacy-url-cc-community-stats');
             if (!communityResult) {
                 $('#legacy-url-cc-community-summary').text('Not scanned yet.');
+                $stats.empty();
                 $rows.empty();
                 setIdle();
                 return;
@@ -565,20 +619,34 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             const sites = communityResult.sites || [];
             const totals = communityResult.stats || {};
             $('#legacy-url-cc-community-summary').text(sites.length
-                ? 'Scanned ' + sites.length + ' Community Site table pair(s) on ' + communityResult.created_at
-                    + '. URLs to update: ' + (totals.changed_urls || 0) + '; valid current URLs: '
-                    + (totals.current_urls || 0) + '; URLs needing review: ' + (totals.issues || 0) + '.'
+                ? 'Scanned ' + sites.length + ' Community Site table pair(s) on ' + communityResult.created_at + '.'
                 : 'No Community Site table pairs were found. Scanned on ' + communityResult.created_at + '.');
+            $stats.html(
+                stat('Sites found', sites.length)
+                + stat('URLs to update', totals.changed_urls || 0, true)
+                + stat('Valid current URLs', totals.current_urls || 0)
+                + stat('URLs needing review', totals.issues || 0, true)
+            );
             $rows.html(sites.map(function (site) {
                 const project = site.project_id
                     ? '<a href="' + escapeHtml(projectPluginUrl(site.project_id)) + '">' + escapeHtml(site.project_id) + '</a>'
                     : '<span class="text-warning">' + escapeHtml(site.match_status === 'ambiguous'
                         ? 'Multiple matching projects; repair disabled' : 'No matching setup project; repair disabled') + '</span>';
                 const counts = site.stats || {};
+                const updates = counts.changed_urls || 0;
+                const reviews = counts.issues || 0;
+                const updateCell = updates
+                    ? '<strong class="text-danger">' + escapeHtml(updates) + '</strong>'
+                    : '<strong>0</strong>';
+                const reviewCell = reviews
+                    ? '<strong style="color:#856404">' + escapeHtml(reviews) + '</strong>'
+                    : '<span class="text-muted">0</span>';
                 return '<tr><td><code>' + escapeHtml(site.prefix) + '</code></td><td>' + project
-                    + '</td><td>' + escapeHtml(counts.changed_urls || 0) + ' to update; '
-                    + escapeHtml(counts.current_urls || 0) + ' current; '
-                    + escapeHtml(counts.issues || 0) + ' for review</td></tr>';
+                    + '</td><td>' + updateCell + '</td><td>' + escapeHtml(counts.current_urls || 0)
+                    + '</td><td>' + reviewCell + '</td><td class="text-end">'
+                    + '<button type="button" class="btn btn-secondary btn-sm legacy-url-cc-community-site-details"'
+                    + ' data-prefix="' + escapeHtml(site.prefix) + '" data-affected="' + escapeHtml(updates + reviews) + '"'
+                    + (updates + reviews ? '' : ' disabled') + '>Details</button></td></tr>';
             }).join(''));
             setIdle();
         }
@@ -600,7 +668,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             if (!communityResult) return;
             setBusy('Loading Community Site details…');
             module.ajax('community-details', {
-                scan_id: communityResult.scan_id, offset: append ? communityOffset : 0
+                scan_id: communityResult.scan_id, offset: append ? communityOffset : 0,
+                prefix: communityDetailPrefix
             }).then(function (result) {
                 const rows = (result.details || []).map(function (detail) {
                     let action, contents;
@@ -621,6 +690,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 if (!append) $body.empty();
                 $body.append(rows.length ? rows.join('') : '<tr><td colspan="3" class="text-muted">No details available.</td></tr>');
                 communityOffset = result.next_offset || 0;
+                $('#legacy-url-cc-community-details-title').text(communityDetailPrefix === null
+                    ? 'All Community Site scan details' : 'Community Site scan details: ' + communityDetailPrefix);
                 $('#legacy-url-cc-community-details-note').text('Showing affected posts '
                     + ((result.offset || 0) + 1) + '–' + communityOffset + ' of ' + (result.total_cells || 0)
                     + (result.stale_cells ? '. ' + result.stale_cells + ' changed after scanning.' : '.'));
@@ -644,8 +715,45 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             });
         });
         $communityScan.on('click', runCommunityScan);
-        $communityDetails.on('click', function () { loadCommunityDetails(false); });
+        $communityDetails.on('click', function () {
+            communityDetailPrefix = null;
+            loadCommunityDetails(false);
+        });
+        $('#legacy-url-cc-community-sites').on('click', '.legacy-url-cc-community-site-details', function () {
+            communityDetailPrefix = String($(this).data('prefix'));
+            loadCommunityDetails(false);
+        });
         $communityMore.on('click', function () { loadCommunityDetails(true); });
+        $communityDetailsCsv.on('click', async function () {
+            if (!communityResult) return;
+            const scanId = communityResult.scan_id;
+            const prefix = communityDetailPrefix;
+            setBusy('Downloading Community Site details…');
+            try {
+                await LegacyUrlScanCsv.download({
+                    filename: 'legacy-url-community-' + (prefix === null ? 'all' : prefix)
+                        + '-' + scanId.slice(0, 12) + '.csv',
+                    headers: ['Action', 'Table prefix', 'Post ID', 'Current URL', 'Replacement URL', 'Reason'],
+                    fetchPage: function (offset) {
+                        return module.ajax('community-details', {scan_id: scanId, offset: offset, prefix: prefix});
+                    },
+                    mapDetail: function (detail) {
+                        return [detail.state, detail.prefix, detail.post_id, detail.url,
+                            detail.replacement, detail.reason];
+                    },
+                    onPage: function (done, total) {
+                        $('#legacy-url-cc-community-progress').text('Preparing CSV: ' + done
+                            + ' of ' + total + ' scanned posts…');
+                    }
+                });
+                $('#legacy-url-cc-community-progress').text('');
+                setIdle();
+            } catch (error) {
+                $error.text(errorMessage(error)).show();
+                $('#legacy-url-cc-community-progress').text('');
+                setIdle();
+            }
+        });
         $communityApply.on('click', function () {
             if (!communityResult) return;
             confirmWithSimpleDialog(

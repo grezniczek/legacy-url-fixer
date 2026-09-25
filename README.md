@@ -17,7 +17,9 @@ Use **Show scan details** to inspect the location, current URL, and proposed rep
 repair. Review entries show their exact location, URL, and reason instead. Current cross-project URLs
 also appear with their owning project PID so they can be reviewed with the project owners. Details are
 read on demand and only shown when the cell still matches its scan-time fingerprint, so source text is not stored in
-the scan cache.
+the scan cache. Each scan details table offers **Download CSV**, which retrieves every detail page
+and exports one row per URL or stale item. Exported values that look like spreadsheet formulas are
+written as text.
 
 The scan recognizes both legacy and current document hashes. A URL is eligible for repair only when
 its supplied legacy hash matches the referenced document ID using the owning project's legacy salt.
@@ -78,8 +80,9 @@ Community setup fields (`site_url`, `site_version`, `table_prefix`, and `tables_
 match are scanned for review but cannot be repaired. The tab scans on first access, caches the
 results system-wide, and has an explicit **Rescan** button. It checks `<prefix>_posts.body`, which is
 the Community Platform's rich-text post content; the attachment table stores document IDs rather
-than URL text. Details are read on demand. Repairs recheck the setup-project match, ownership policy,
-and the post body's scan-time fingerprint before updating the body. Batch outcomes are recorded in
+than URL text. A site row shows separate update, current, and review counts. Details are read on
+demand across all sites or for one site at a time. Repairs recheck the setup-project match, ownership
+policy, and the post body's scan-time fingerprint before updating the body. Batch outcomes are recorded in
 the External Module log.
 
 ## Changelog
