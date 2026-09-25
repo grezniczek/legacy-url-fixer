@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - Added Community Site discovery and post-body scanning, details, and repair in a Control Center tab.
 - Added separate Community Site result counts, summary boxes, and per-site details.
