@@ -8,14 +8,16 @@ use ExternalModules\ExternalModules;
  * Finds and repairs stored REDCap image/file URLs that use the pre-September
  * 2026 document hash algorithm.
  *
- * The scanner deliberately covers authored project content only. It does not
- * inspect record data or historical delivery/audit tables.
+ * The scanner covers authored project configuration, selected system settings,
+ * and Community Platform post bodies. It does not inspect ordinary record data
+ * or historical delivery/audit tables.
  */
 class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModule
 {
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
+    private const COMMUNITY_SCAN_CACHE_KEY = 'community-sites-scan';
     private const CONTROL_CENTER_SCAN_DONE_SETTING = 'control-center-scan-done';
     private const CONTROL_CENTER_ACTIVITY_WINDOWS = [
         'all' => null,
@@ -89,8 +91,27 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'control-center-settings-scan',
             'control-center-settings-details',
             'control-center-settings-apply',
+            'community-status',
+            'community-scan',
+            'community-details',
+            'community-apply',
         ], true)) {
             $this->requireControlCenterAccess();
+            if ($action === 'community-status') {
+                return $this->getCommunityScanSummary();
+            }
+            if ($action === 'community-scan') {
+                return $this->runCommunityScan();
+            }
+            if ($action === 'community-details') {
+                return $this->getCommunityScanDetails(
+                    is_array($payload) ? ($payload['scan_id'] ?? null) : null,
+                    is_array($payload) ? ($payload['offset'] ?? 0) : 0
+                );
+            }
+            if ($action === 'community-apply') {
+                return $this->applyCommunityScan(is_array($payload) ? ($payload['scan_id'] ?? null) : null);
+            }
             if ($action === 'control-center-status') {
                 return $this->getControlCenterScanStatus();
             }
@@ -327,6 +348,288 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'surfaces' => $summaries,
             'settings' => $this->getControlCenterSettingsScanSummary(),
         ];
+    }
+
+    /** Discover installed Community tables and match them to setup projects. */
+    private function discoverCommunitySites(): array
+    {
+        $tables = [];
+        $result = $this->query(
+            'SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE ?',
+            ['%_posts%']
+        );
+        while ($row = $result->fetch_assoc()) {
+            $row = array_change_key_case($row, CASE_LOWER);
+            if (is_string($row['table_name'] ?? null)) {
+                $tables[$row['table_name']] = true;
+            }
+        }
+
+        $prefixes = [];
+        foreach ($tables as $table => $_) {
+            if (substr($table, -6) !== '_posts') {
+                continue;
+            }
+            $prefix = substr($table, 0, -6);
+            if (preg_match('/^[a-z_][a-z0-9_]*$/D', $prefix) !== 1
+                || !isset($tables[$prefix . '_posts_attachments'])) {
+                continue;
+            }
+            $columns = $this->getAvailableColumns($table, ['post_id', 'body']);
+            if ($columns === null || !isset($columns['post_id'], $columns['body'])) {
+                continue;
+            }
+            $prefixes[$prefix] = [];
+        }
+
+        if ($prefixes === []) {
+            return [];
+        }
+        $result = $this->query(
+            'SELECT m.project_id FROM redcap_metadata m'
+            . ' INNER JOIN redcap_projects p ON p.project_id = m.project_id'
+            . ' WHERE m.field_name IN (\'site_url\', \'site_version\', \'table_prefix\', \'tables_created\')'
+            . ' GROUP BY m.project_id HAVING COUNT(DISTINCT m.field_name) = 4'
+        );
+        while ($row = $result->fetch_assoc()) {
+            $projectId = (int) ($row['project_id'] ?? 0);
+            if ($projectId < 1) {
+                continue;
+            }
+            $dataTable = $this->framework->getDataTable($projectId);
+            if (!is_string($dataTable) || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $dataTable) !== 1) {
+                continue;
+            }
+            $config = $this->query(
+                'SELECT value FROM ' . $this->identifier($dataTable)
+                . ' WHERE project_id = ? AND record = ? AND field_name = ? LIMIT 2',
+                [$projectId, 'CONFIG', 'table_prefix']
+            );
+            $prefixRow = $config->fetch_assoc();
+            $prefix = $prefixRow['value'] ?? null;
+            if ($config->fetch_assoc() || !is_string($prefix) || !array_key_exists($prefix, $prefixes)) {
+                continue;
+            }
+            $prefixes[$prefix][] = $projectId;
+        }
+
+        $sites = [];
+        foreach ($prefixes as $prefix => $projectIds) {
+            $sites[] = [
+                'prefix' => $prefix,
+                'table' => $prefix . '_posts',
+                'project_id' => count($projectIds) === 1 ? $projectIds[0] : null,
+                'match_status' => count($projectIds) === 1 ? 'matched'
+                    : (count($projectIds) > 1 ? 'ambiguous' : 'unmatched'),
+            ];
+        }
+        return $sites;
+    }
+
+    private function runCommunityScan(): array
+    {
+        $scan = [
+            'id' => bin2hex(random_bytes(16)),
+            'created_at' => date('c'),
+            'sites' => $this->discoverCommunitySites(),
+            'items' => [],
+            'detail_items' => [],
+            'stats' => ['changed_cells' => 0, 'changed_urls' => 0, 'current_urls' => 0,
+                'issues' => 0, 'issues_by_reason' => []],
+        ];
+        $this->documentCache = [];
+        $candidate = $this->getCandidateWhereClause(['body'], '');
+        foreach ($scan['sites'] as &$site) {
+            $site['stats'] = ['changed_cells' => 0, 'changed_urls' => 0, 'current_urls' => 0, 'issues' => 0];
+            $site['allow_cross_project_edoc_repair'] = $site['project_id'] !== null
+                && $this->allowsCrossProjectEdocRepair($site['project_id']);
+            $context = $site['project_id'] === null
+                ? ['community_unmatched' => true]
+                : ['project_id' => $site['project_id'],
+                    'allow_cross_project_edoc_repair' => $site['allow_cross_project_edoc_repair']];
+            $rows = $this->query(
+                'SELECT post_id, body FROM ' . $this->identifier($site['table'])
+                . ' WHERE ' . $candidate['sql'], $candidate['params']
+            );
+            while ($row = $rows->fetch_assoc()) {
+                $postId = $row['post_id'] ?? null;
+                $body = $row['body'] ?? null;
+                if (!$this->isInteger($postId) || !is_string($body) || !$this->containsPotentialUrl($body)) {
+                    continue;
+                }
+                $upgraded = $this->upgradeText($body, $context);
+                $site['stats']['current_urls'] += $upgraded['current'];
+                $site['stats']['issues'] += $upgraded['issues'];
+                $scan['stats']['current_urls'] += $upgraded['current'];
+                $scan['stats']['issues'] += $upgraded['issues'];
+                foreach ($upgraded['issues_by_reason'] as $reason => $count) {
+                    $scan['stats']['issues_by_reason'][$reason] = ($scan['stats']['issues_by_reason'][$reason] ?? 0) + $count;
+                }
+                if ($upgraded['changed'] === 0 && $upgraded['issues'] === 0) {
+                    continue;
+                }
+                $item = ['prefix' => $site['prefix'], 'post_id' => (int) $postId,
+                    'checksum' => hash('sha256', $body)];
+                $scan['detail_items'][] = $item;
+                if ($upgraded['changed'] > 0) {
+                    $item['url_count'] = $upgraded['changed'];
+                    $scan['items'][] = $item;
+                    $site['stats']['changed_cells']++;
+                    $site['stats']['changed_urls'] += $upgraded['changed'];
+                    $scan['stats']['changed_cells']++;
+                    $scan['stats']['changed_urls'] += $upgraded['changed'];
+                }
+            }
+        }
+        unset($site);
+        $encoded = json_encode($scan);
+        if ($encoded === false || strlen($encoded) > self::MAX_SCAN_CACHE_BYTES) {
+            throw new \Exception('The Community Sites scan is too large to cache safely.');
+        }
+        $this->setSystemSetting(self::COMMUNITY_SCAN_CACHE_KEY, $encoded);
+        return $this->communityScanSummary($scan);
+    }
+
+    private function getCommunityCachedScan(): ?array
+    {
+        $encoded = $this->getSystemSetting(self::COMMUNITY_SCAN_CACHE_KEY);
+        if (!is_string($encoded) || $encoded === '') {
+            return null;
+        }
+        $scan = json_decode($encoded, true);
+        return is_array($scan) && is_string($scan['id'] ?? null)
+            && is_array($scan['sites'] ?? null) && is_array($scan['items'] ?? null)
+            && is_array($scan['detail_items'] ?? null) && is_array($scan['stats'] ?? null)
+            ? $scan : null;
+    }
+
+    private function getCommunityScanSummary(): array
+    {
+        $scan = $this->getCommunityCachedScan();
+        return $scan === null ? ['status' => 'not-scanned'] : $this->communityScanSummary($scan);
+    }
+
+    private function communityScanSummary(array $scan): array
+    {
+        return ['status' => 'complete', 'scan_id' => $scan['id'],
+            'created_at' => $scan['created_at'], 'sites' => $scan['sites'], 'stats' => $scan['stats']];
+    }
+
+    private function requireCommunityScan($requestedScanId): array
+    {
+        $scan = $this->getCommunityCachedScan();
+        if ($scan === null || !is_string($requestedScanId)
+            || !hash_equals($scan['id'], $requestedScanId)) {
+            throw new \Exception('The Community Sites scan is no longer current. Run a new scan first.');
+        }
+        return $scan;
+    }
+
+    private function getCommunityScanDetails($requestedScanId, $offset): array
+    {
+        $scan = $this->requireCommunityScan($requestedScanId);
+        $offset = $this->isInteger($offset) ? max(0, (int) $offset) : 0;
+        $page = array_slice($scan['detail_items'], $offset, self::DETAIL_PAGE_SIZE);
+        $sites = array_column($scan['sites'], null, 'prefix');
+        $currentSites = array_column($this->discoverCommunitySites(), null, 'prefix');
+        $details = [];
+        $stale = 0;
+        foreach ($page as $item) {
+            $site = $sites[$item['prefix'] ?? ''] ?? null;
+            $current = $currentSites[$item['prefix'] ?? ''] ?? null;
+            $mappingChanged = $site === null || $current === null
+                || $site['table'] !== $current['table']
+                || $site['project_id'] !== $current['project_id'];
+            $body = $mappingChanged ? null : $this->getCommunityPostBody($site['table'], $item['post_id']);
+            if (!is_string($body) || !hash_equals($item['checksum'], hash('sha256', $body))) {
+                $stale++;
+                $details[] = ['state' => 'stale', 'prefix' => $item['prefix'],
+                    'post_id' => $item['post_id'], 'reason' => 'This post changed after the scan. Rescan for an updated preview.'];
+                continue;
+            }
+            $context = $site['project_id'] === null ? ['community_unmatched' => true]
+                : ['project_id' => $site['project_id'],
+                    'allow_cross_project_edoc_repair' => $site['allow_cross_project_edoc_repair']];
+            foreach ($this->upgradeText($body, $context)['matches'] as $match) {
+                if (in_array($match['state'], ['repair', 'review'], true)) {
+                    $details[] = array_merge($match, ['prefix' => $site['prefix'], 'post_id' => $item['post_id']]);
+                }
+            }
+        }
+        $next = $offset + count($page);
+        return ['details' => $details, 'offset' => $offset, 'next_offset' => $next,
+            'has_more' => $next < count($scan['detail_items']),
+            'total_cells' => count($scan['detail_items']), 'stale_cells' => $stale];
+    }
+
+    private function getCommunityPostBody(string $table, int $postId): ?string
+    {
+        $row = $this->query('SELECT body FROM ' . $this->identifier($table)
+            . ' WHERE post_id = ?', [$postId])->fetch_assoc();
+        return is_string($row['body'] ?? null) ? $row['body'] : null;
+    }
+
+    private function applyCommunityScan($requestedScanId): array
+    {
+        $scan = $this->requireCommunityScan($requestedScanId);
+        $currentSites = array_column($this->discoverCommunitySites(), null, 'prefix');
+        $scannedSites = array_column($scan['sites'], null, 'prefix');
+        $counts = ['updated_cells' => 0, 'updated_urls' => 0, 'skipped_changed' => 0,
+            'skipped_no_longer_needed' => 0, 'errors' => 0];
+        $outcomes = [];
+        foreach ($scan['items'] as $item) {
+            $site = $scannedSites[$item['prefix'] ?? ''] ?? null;
+            $current = $currentSites[$item['prefix'] ?? ''] ?? null;
+            $outcome = ['prefix' => $item['prefix'] ?? null, 'post_id' => $item['post_id'] ?? null];
+            if ($site === null || $current === null || $site['project_id'] === null
+                || $site['project_id'] !== $current['project_id']
+                || $site['table'] !== $current['table']
+                || $site['allow_cross_project_edoc_repair'] !== $this->allowsCrossProjectEdocRepair($site['project_id'])) {
+                $outcome['result'] = 'skipped-site-changed';
+                $counts['errors']++;
+                $outcomes[] = $outcome;
+                continue;
+            }
+            try {
+                $body = $this->getCommunityPostBody($site['table'], $item['post_id']);
+                if (!is_string($body) || !hash_equals($item['checksum'], hash('sha256', $body))) {
+                    $outcome['result'] = 'skipped-changed';
+                    $counts['skipped_changed']++;
+                } else {
+                    $upgraded = $this->upgradeText($body, ['project_id' => $site['project_id'],
+                        'allow_cross_project_edoc_repair' => $site['allow_cross_project_edoc_repair']]);
+                    if ($upgraded['changed'] === 0) {
+                        $outcome['result'] = 'skipped-no-longer-needed';
+                        $counts['skipped_no_longer_needed']++;
+                    } else {
+                        $update = $this->createQuery();
+                        $update->add('UPDATE ' . $this->identifier($site['table'])
+                            . ' SET body = ? WHERE post_id = ? AND body = ?',
+                            [$upgraded['value'], $item['post_id'], $body]);
+                        $update->execute();
+                        if ($update->affected_rows === 1) {
+                            $outcome['result'] = 'updated';
+                            $outcome['url_count'] = $upgraded['changed'];
+                            $counts['updated_cells']++;
+                            $counts['updated_urls'] += $upgraded['changed'];
+                        } else {
+                            $outcome['result'] = 'skipped-changed';
+                            $counts['skipped_changed']++;
+                        }
+                    }
+                }
+            } catch (\Throwable $exception) {
+                $outcome['result'] = 'error';
+                $outcome['detail'] = $exception->getMessage();
+                $counts['errors']++;
+            }
+            $outcomes[] = $outcome;
+        }
+        $this->log('Community Site legacy URL repair batch completed', [
+            'scan_id' => substr($scan['id'], 0, 16), 'counts' => $counts, 'outcomes' => $outcomes,
+        ]);
+        $this->setSystemSetting(self::COMMUNITY_SCAN_CACHE_KEY, null);
+        return ['counts' => $counts];
     }
 
     /**
@@ -1075,6 +1378,9 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $document = $this->getDocument($docId);
         if ($document === false) {
             return ['state' => 'issue', 'reason' => 'The referenced document no longer exists'];
+        }
+        if (($project['community_unmatched'] ?? false) === true) {
+            return ['state' => 'issue', 'reason' => 'No unique Community setup project matches this table prefix'];
         }
         if (($project['system_setting'] ?? false) === true && $document['project_id'] !== null) {
             return ['state' => 'issue', 'reason' => 'System-level settings must reference a system e-document, not a project-owned document'];

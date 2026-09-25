@@ -71,10 +71,22 @@ reference a system e-document (`redcap_edocs_metadata.project_id IS NULL`); a pr
 reported for review and is never repaired. System-setting repairs use the same optimistic-locking check
 and log their batch summary in the External Module log.
 
+The Control Center **Community Sites** tab discovers tables with matching `<prefix>_posts` and
+`<prefix>_posts_attachments` names. It matches a site to a project only when that project has all four
+Community setup fields (`site_url`, `site_version`, `table_prefix`, and `tables_created`) in
+`redcap_metadata` and its `CONFIG` record has exactly that table prefix. Sites without one unique
+match are scanned for review but cannot be repaired. The tab scans on first access, caches the
+results system-wide, and has an explicit **Rescan** button. It checks `<prefix>_posts.body`, which is
+the Community Platform's rich-text post content; the attachment table stores document IDs rather
+than URL text. Details are read on demand. Repairs recheck the setup-project match, ownership policy,
+and the post body's scan-time fingerprint before updating the body. Batch outcomes are recorded in
+the External Module log.
+
 ## Changelog
 
 Version | Description
 ------- | ---------------------
+Unreleased | Added Community Site discovery and post-body scan, preview, and repair in a new Control Center tab.
 0.7.0   | Added a production-project Draft Mode reminder and automatic page reload with a repair-result toast. Added sequential Control Center **Scan all** and a last-activity filter for project scans (no limit, 3, 6, or 12 months); cached results record the selected filter.
 0.6.0   | Added detection of supported image/file URLs that point to a different REDCap host. These links are reported for review in project scans, Control Center project scans, and Control Center settings scans, and are never changed automatically.
 0.5.0   | Project scan details now show current cross-project URLs and their owning project IDs. Production project scans report the delivered data dictionary as read-only, alongside the draft dictionary when Draft Mode is on; repairs still target only the draft. Control Center scans the active data dictionary in all projects, including those in Draft Mode, and labels the draft scan more clearly.

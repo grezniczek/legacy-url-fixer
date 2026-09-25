@@ -1,7 +1,7 @@
 {
 	"name": "Legacy URL Fixer",
 	"namespace": "DE\\RUB\\SEG\\LegacyURLFixerExternalModule",
-	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration.",
+	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration, system settings, and Community Sites.",
 	"documentation": "README.md",
 	"authors": [
 		{
@@ -20,7 +20,11 @@
 		"control-center-status",
 		"control-center-settings-scan",
 		"control-center-settings-details",
-		"control-center-settings-apply"
+		"control-center-settings-apply",
+		"community-status",
+		"community-scan",
+		"community-details",
+		"community-apply"
 	],
 	"project-settings": [
 		{

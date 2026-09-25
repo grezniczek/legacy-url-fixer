@@ -30,6 +30,11 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 Control Center settings
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="legacy-url-cc-community-tab" data-bs-toggle="tab"
+                    data-bs-target="#legacy-url-cc-community-pane" type="button" role="tab"
+                    aria-controls="legacy-url-cc-community-pane" aria-selected="false">Community Sites</button>
+        </li>
     </ul>
 
     <div class="tab-content pt-3" id="legacy-url-cc-tab-content">
@@ -138,6 +143,37 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             </div>
             <div id="legacy-url-cc-settings-apply-result" class="alert mt-2" style="display:none" role="status"></div>
         </div>
+        <div class="tab-pane fade" id="legacy-url-cc-community-pane" role="tabpanel"
+             aria-labelledby="legacy-url-cc-community-tab" tabindex="0">
+            <p>Scan Community Platform post bodies in tables whose <code>_posts</code> and
+                <code>_posts_attachments</code> names share a prefix. Repairs require one setup project
+                with the matching <code>table_prefix</code> value.</p>
+            <p>
+                <button type="button" id="legacy-url-cc-community-scan" class="btn btn-primaryrc">
+                    <i class="fas fa-search"></i> Rescan
+                </button>
+                <span id="legacy-url-cc-community-progress" class="small text-muted ms-2" aria-live="polite"></span>
+                <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary" disabled>Show scan details</button>
+                <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger" disabled>Fix all scanned URLs</button>
+            </p>
+            <div id="legacy-url-cc-community-summary" class="mb-3 text-muted">Open this tab to scan.</div>
+            <div class="table-responsive">
+                <table class="table table-sm"><thead><tr><th>Table prefix</th><th>Setup project</th><th>Post body results</th></tr></thead>
+                    <tbody id="legacy-url-cc-community-sites"></tbody></table>
+            </div>
+            <div id="legacy-url-cc-community-details-result" class="card mt-3" style="display:none">
+                <div class="card-header"><strong>Community Site scan details</strong></div>
+                <div class="card-body">
+                    <div id="legacy-url-cc-community-details-note" class="small text-muted mb-2"></div>
+                    <div class="table-responsive"><table class="table table-sm mb-0">
+                        <thead><tr><th>Action</th><th>Post</th><th>Details</th></tr></thead>
+                        <tbody id="legacy-url-cc-community-details-rows"></tbody>
+                    </table></div>
+                    <button type="button" id="legacy-url-cc-community-details-more" class="btn btn-secondary btn-sm mt-3" style="display:none">Show more</button>
+                </div>
+            </div>
+            <div id="legacy-url-cc-community-apply-result" class="alert mt-2" style="display:none" role="status"></div>
+        </div>
     </div>
 </div>
 
@@ -169,6 +205,13 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         const $settingsDetailsRows = $('#legacy-url-cc-settings-details-rows');
         const $settingsDetailsMore = $('#legacy-url-cc-settings-details-more');
         const $settingsApplyResult = $('#legacy-url-cc-settings-apply-result');
+        const $communityScan = $('#legacy-url-cc-community-scan');
+        const $communityDetails = $('#legacy-url-cc-community-details');
+        const $communityApply = $('#legacy-url-cc-community-apply');
+        const $communityMore = $('#legacy-url-cc-community-details-more');
+        let communityResult = null;
+        let communityOffset = 0;
+        let communityLoaded = false;
 
         function escapeHtml(value) {
             return $('<div>').text(value == null ? '' : String(value)).html();
@@ -296,6 +339,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             $settingsDetails.prop('disabled', true);
             $settingsDetailsMore.prop('disabled', true);
             $settingsApply.prop('disabled', true);
+            $communityScan.prop('disabled', true);
+            $communityDetails.prop('disabled', true);
+            $communityMore.prop('disabled', true);
+            $communityApply.prop('disabled', true);
             $progress.text(message);
             $error.hide();
         }
@@ -310,6 +357,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 || ((settingsScan.stats.changed_cells || 0) === 0 && (settingsScan.stats.issues || 0) === 0));
             $settingsDetailsMore.prop('disabled', false);
             $settingsApply.prop('disabled', !settingsScan || (settingsScan.stats.changed_cells || 0) === 0);
+            $communityScan.prop('disabled', false);
+            $communityDetails.prop('disabled', !communityResult || ((communityResult.stats.changed_cells || 0) === 0 && (communityResult.stats.issues || 0) === 0));
+            $communityMore.prop('disabled', false);
+            $communityApply.prop('disabled', !communityResult || (communityResult.stats.changed_cells || 0) === 0);
             $progress.text('');
         }
 
@@ -493,6 +544,127 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                             .show();
                         setIdle();
                     });
+                }).catch(function (error) {
+                    $error.text(errorMessage(error)).show();
+                    setIdle();
+                });
+            });
+        });
+
+        function renderCommunity(result) {
+            communityResult = result && result.status === 'complete' ? result : null;
+            communityOffset = 0;
+            $('#legacy-url-cc-community-details-result, #legacy-url-cc-community-apply-result').hide();
+            const $rows = $('#legacy-url-cc-community-sites');
+            if (!communityResult) {
+                $('#legacy-url-cc-community-summary').text('Not scanned yet.');
+                $rows.empty();
+                setIdle();
+                return;
+            }
+            const sites = communityResult.sites || [];
+            const totals = communityResult.stats || {};
+            $('#legacy-url-cc-community-summary').text(sites.length
+                ? 'Scanned ' + sites.length + ' Community Site table pair(s) on ' + communityResult.created_at
+                    + '. URLs to update: ' + (totals.changed_urls || 0) + '; valid current URLs: '
+                    + (totals.current_urls || 0) + '; URLs needing review: ' + (totals.issues || 0) + '.'
+                : 'No Community Site table pairs were found. Scanned on ' + communityResult.created_at + '.');
+            $rows.html(sites.map(function (site) {
+                const project = site.project_id
+                    ? '<a href="' + escapeHtml(projectPluginUrl(site.project_id)) + '">' + escapeHtml(site.project_id) + '</a>'
+                    : '<span class="text-warning">' + escapeHtml(site.match_status === 'ambiguous'
+                        ? 'Multiple matching projects; repair disabled' : 'No matching setup project; repair disabled') + '</span>';
+                const counts = site.stats || {};
+                return '<tr><td><code>' + escapeHtml(site.prefix) + '</code></td><td>' + project
+                    + '</td><td>' + escapeHtml(counts.changed_urls || 0) + ' to update; '
+                    + escapeHtml(counts.current_urls || 0) + ' current; '
+                    + escapeHtml(counts.issues || 0) + ' for review</td></tr>';
+            }).join(''));
+            setIdle();
+        }
+
+        function runCommunityScan() {
+            setBusy('Scanning Community Sites…');
+            $('#legacy-url-cc-community-progress').text('Scanning Community Sites…');
+            module.ajax('community-scan', {}).then(function (result) {
+                renderCommunity(result);
+                $('#legacy-url-cc-community-progress').text('');
+            }).catch(function (error) {
+                $error.text(errorMessage(error)).show();
+                $('#legacy-url-cc-community-progress').text('');
+                setIdle();
+            });
+        }
+
+        function loadCommunityDetails(append) {
+            if (!communityResult) return;
+            setBusy('Loading Community Site details…');
+            module.ajax('community-details', {
+                scan_id: communityResult.scan_id, offset: append ? communityOffset : 0
+            }).then(function (result) {
+                const rows = (result.details || []).map(function (detail) {
+                    let action, contents;
+                    if (detail.state === 'repair') {
+                        action = '<span class="badge bg-success">Will update</span>';
+                        contents = urlPreview('Current URL', detail.url) + urlPreview('Replacement URL', detail.replacement);
+                    } else if (detail.state === 'review') {
+                        action = '<span class="badge bg-warning text-dark">Review</span>';
+                        contents = escapeHtml(detail.reason || '') + urlPreview('Current URL', detail.url);
+                    } else {
+                        action = '<span class="badge bg-secondary">Refresh needed</span>';
+                        contents = escapeHtml(detail.reason || 'Post changed');
+                    }
+                    return '<tr><td>' + action + '</td><td><code>' + escapeHtml(detail.prefix)
+                        + '_posts</code><br>post_id=' + escapeHtml(detail.post_id) + '</td><td>' + contents + '</td></tr>';
+                });
+                const $body = $('#legacy-url-cc-community-details-rows');
+                if (!append) $body.empty();
+                $body.append(rows.length ? rows.join('') : '<tr><td colspan="3" class="text-muted">No details available.</td></tr>');
+                communityOffset = result.next_offset || 0;
+                $('#legacy-url-cc-community-details-note').text('Showing affected posts '
+                    + ((result.offset || 0) + 1) + '–' + communityOffset + ' of ' + (result.total_cells || 0)
+                    + (result.stale_cells ? '. ' + result.stale_cells + ' changed after scanning.' : '.'));
+                $communityMore.toggle(!!result.has_more);
+                $('#legacy-url-cc-community-details-result').show();
+                setIdle();
+            }).catch(function (error) {
+                $error.text(errorMessage(error)).show();
+                setIdle();
+            });
+        }
+
+        $('#legacy-url-cc-community-tab').on('shown.bs.tab', function () {
+            if (communityLoaded) return;
+            communityLoaded = true;
+            module.ajax('community-status', {}).then(function (result) {
+                if (result.status === 'not-scanned') runCommunityScan();
+                else renderCommunity(result);
+            }).catch(function (error) {
+                $error.text(errorMessage(error)).show();
+            });
+        });
+        $communityScan.on('click', runCommunityScan);
+        $communityDetails.on('click', function () { loadCommunityDetails(false); });
+        $communityMore.on('click', function () { loadCommunityDetails(true); });
+        $communityApply.on('click', function () {
+            if (!communityResult) return;
+            confirmWithSimpleDialog(
+                'Update every repairable legacy URL in the cached Community Site scan? URLs requiring review remain unchanged.',
+                'Fix scanned Community Site URLs', 'Fix URLs'
+            ).then(function (confirmed) {
+                if (!confirmed) return;
+                setBusy('Fixing Community Site URLs…');
+                module.ajax('community-apply', {scan_id: communityResult.scan_id}).then(function (result) {
+                    communityResult = null;
+                    const counts = result.counts || {};
+                    $('#legacy-url-cc-community-apply-result').removeClass('alert-danger').addClass('alert-success')
+                        .text('Updated ' + (counts.updated_cells || 0) + ' post(s) and '
+                            + (counts.updated_urls || 0) + ' URL(s). Skipped changed: '
+                            + (counts.skipped_changed || 0) + '; no longer needed: '
+                            + (counts.skipped_no_longer_needed || 0) + '; errors: '
+                            + (counts.errors || 0) + '. Rescan to refresh results.')
+                        .show();
+                    setIdle();
                 }).catch(function (error) {
                     $error.text(errorMessage(error)).show();
                     setIdle();
