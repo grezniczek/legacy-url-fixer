@@ -31,13 +31,13 @@ ExternalModules::requireDesignRights();
     </div>
 
     <p>
-        <button type="button" id="legacy-url-scan" class="btn btn-primaryrc">
+        <button type="button" id="legacy-url-scan" class="btn btn-primaryrc btn-sm">
             <i class="fas fa-search"></i> Scan project
         </button>
-        <button type="button" id="legacy-url-details" class="btn btn-secondary" disabled>
+        <button type="button" id="legacy-url-details" class="btn btn-secondary btn-sm" disabled>
             <i class="fas fa-list"></i> Show scan details
         </button>
-        <button type="button" id="legacy-url-apply" class="btn btn-danger" disabled>
+        <button type="button" id="legacy-url-apply" class="btn btn-danger btn-sm" disabled>
             <i class="fas fa-wrench"></i> Fix all scanned URLs
         </button>
         <span id="legacy-url-progress" class="ms-2 text-muted" aria-live="polite"></span>

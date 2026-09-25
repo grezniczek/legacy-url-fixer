@@ -60,7 +60,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 <div class="small text-muted mt-1">Each surface scan covers one physical table. The sequential Scan all run has been practical even on large REDCap instances.</div>
             </div>
             <p>
-                <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc">
+                <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc btn-sm">
                     <i class="fas fa-search"></i> Scan all
                 </button>
                 <span id="legacy-url-cc-progress" class="small text-muted ms-2" aria-live="polite"></span>
@@ -98,14 +98,14 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                         (<code>redcap_edocs_metadata.project_id IS NULL</code>); a project-owned eDoc is review-only.
                     </p>
                     <p>
-                        <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc">
+                        <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc btn-sm">
                             <i class="fas fa-search"></i> Scan Control Center settings
                         </button>
                         <span id="legacy-url-cc-settings-progress" class="small text-muted ms-2" aria-live="polite"></span>
-                        <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary" disabled>
+                        <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary btn-sm" disabled>
                             <i class="fas fa-list"></i> Show scan details
                         </button>
-                        <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger" disabled>
+                        <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger btn-sm" disabled>
                             <i class="fas fa-wrench"></i> Fix all scanned URLs
                         </button>
                     </p>
@@ -149,12 +149,12 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 <code>_posts_attachments</code> names share a prefix. Repairs require one setup project
                 with the matching <code>table_prefix</code> value.</p>
             <p>
-                <button type="button" id="legacy-url-cc-community-scan" class="btn btn-primaryrc">
+                <button type="button" id="legacy-url-cc-community-scan" class="btn btn-primaryrc btn-sm">
                     <i class="fas fa-search"></i> Rescan
                 </button>
                 <span id="legacy-url-cc-community-progress" class="small text-muted ms-2" aria-live="polite"></span>
-                <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary" disabled>Show scan details</button>
-                <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger" disabled>Fix all scanned URLs</button>
+                <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary btn-sm" disabled>Show scan details</button>
+                <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger btn-sm" disabled>Fix all scanned URLs</button>
             </p>
             <div id="legacy-url-cc-community-summary" class="mb-3 text-muted">Open this tab to scan.</div>
             <div class="table-responsive">
