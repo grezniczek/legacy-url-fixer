@@ -389,7 +389,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'SELECT m.project_id FROM redcap_metadata m'
             . ' INNER JOIN redcap_projects p ON p.project_id = m.project_id'
             . ' WHERE m.field_name IN (\'site_url\', \'site_version\', \'table_prefix\', \'tables_created\')'
-            . ' GROUP BY m.project_id HAVING COUNT(DISTINCT m.field_name) = 4'
+            . ' GROUP BY m.project_id HAVING COUNT(DISTINCT m.field_name) = 4',
+            []
         );
         while ($row = $result->fetch_assoc()) {
             $projectId = (int) ($row['project_id'] ?? 0);
