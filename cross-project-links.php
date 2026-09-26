@@ -1,6 +1,10 @@
 <?php
 
+namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
+
 use ExternalModules\ExternalModules;
+
+/** @var LegacyURLFixerExternalModule $module */
 
 ExternalModules::requireDesignRights();
 $projectId = (int) PROJECT_ID;
@@ -15,8 +19,8 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
     }
 </style>
 <div class="legacy-cross-project-links">
-    <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
-    <h4 class="mb-1"><i class="fas fa-exchange-alt"></i> Relocate cross-project file links</h4>
+    <p class="text-muted" style="font-size:.875rem;margin-bottom:-5px"><em>Link Inspector &amp; Repair</em></p>
+    <div class="projhdr mb-1"><i class="fa-solid fa-exchange-alt"></i> Relocate cross-project file links</div>
     <p>
         This report finds image and download links in this project's authored configuration when the referenced file belongs
         to another project. It includes current, legacy, and mismatched hashes for supported URLs on this REDCap host. Only links to projects where you also have
@@ -29,7 +33,7 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
         Production data dictionaries can be changed only through Draft Mode.
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <button type="button" id="cross-project-scan" class="btn btn-primaryrc btn-sm"><i class="fas fa-search"></i> Scan project</button>
+        <button type="button" id="cross-project-scan" class="btn btn-primaryrc btn-sm"><i class="fa-solid fa-search"></i> Scan project</button>
         <button type="button" id="cross-project-relocate" class="btn btn-secondary btn-sm" disabled>Relocate selected</button>
         <label class="mb-0 small" for="cross-project-folder">Public link destination</label>
         <select id="cross-project-folder" class="form-select form-select-sm" style="width:auto;max-width:320px">
@@ -45,12 +49,12 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
     </div>
     <div id="cross-project-error" class="alert alert-danger" style="display:none" role="alert"></div>
     <div id="cross-project-result" class="alert alert-info" style="display:none" role="status"></div>
-    <div id="cross-project-summary" class="small text-muted mb-2"></div>
+    <div id="cross-project-summary" class="small text-muted mb-4"></div>
     <div class="table-responsive">
         <table id="cross-project-table" class="table table-hover table-sm" style="width:100%">
             <thead><tr>
                 <th><input type="checkbox" id="cross-project-select-page" aria-label="Select visible links"></th>
-                <th>Location</th><th>File owner</th><th>File</th><th>Hash</th><th>Link</th>
+                <th>Location</th><th>Owner PID</th><th>File</th><th>Hash</th><th>Link</th>
             </tr></thead>
         </table>
     </div>

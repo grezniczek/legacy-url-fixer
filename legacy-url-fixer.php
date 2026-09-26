@@ -1,13 +1,18 @@
 <?php
 
+namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
+
 use ExternalModules\ExternalModules;
+
+/** @var LegacyURLFixerExternalModule $module */
+
 
 ExternalModules::requireDesignRights();
 
 ?>
 <div class="legacy-url-fixer" style="max-width: 960px">
-    <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
-    <h4 class="mb-1"><i class="fas fa-link"></i> Fix legacy image/file URLs</h4>
+    <p class="text-muted" style="font-size:.875rem;margin-bottom:-5px;"><em>Link Inspector &amp; Repair</em></p>
+    <div class="projhdr mb-1"><i class="fas fa-link"></i> Fix legacy image/file URLs</div>
 
     <?php if (isset($Proj->project['status']) && (int) $Proj->project['status'] > 0): ?>
         <div class="alert alert-info">

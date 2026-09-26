@@ -1,4 +1,7 @@
 <?php
+namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
+
+/** @var LegacyURLFixerExternalModule $module */
 
 if (!$module->isSuperUser()) {
     ?>

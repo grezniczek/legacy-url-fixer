@@ -57,28 +57,28 @@
 	"links": {
 		"control-center": [
 			{
-				"name": "LIR: Scan legacy image/file URLs",
-				"icon": "fas fa-search",
+				"name": "<b>LIR</b> &bull; Scan legacy image/file links",
+				"icon": "fa-solid fa-search",
 				"url": "legacy-url-fixer-control-center.php",
 				"show-header-and-footer": true
 			},
 			{
-				"name": "LIR: Scan for cross-project file links",
-				"icon": "fas fa-exchange-alt",
+				"name": "<b>LIR</b> &bull; Scan for cross-project file links",
+				"icon": "fa-solid fa-exchange-alt",
 				"url": "cross-project-links-control-center.php",
 				"show-header-and-footer": true
 			}
 		],
 		"project": [
 			{
-				"name": "LIR: Fix legacy image/file URLs",
-				"icon": "fas fa-link",
+				"name": "<b>LIR</b> &bull; Fix legacy image/file links",
+				"icon": "fa-solid fa-link",
 				"url": "legacy-url-fixer.php",
 				"show-header-and-footer": true
 			},
 			{
-				"name": "LIR: Relocate cross-project file links",
-				"icon": "fas fa-exchange-alt",
+				"name": "<b>LIR</b> &bull; Relocate cross-project file links",
+				"icon": "fa-solid fa-exchange-alt",
 				"url": "cross-project-links.php",
 				"show-header-and-footer": true
 			}

@@ -1,5 +1,9 @@
 <?php
 
+namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
+
+/** @var LegacyURLFixerExternalModule $module */
+
 if (!$module->isSuperUser()) {
     ?>
     <div class="alert alert-danger" role="alert">Only a REDCap super user may use this page.</div>
@@ -12,7 +16,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 ?>
 <div class="legacy-url-fixer-control-center" style="max-width: 1100px">
     <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
-    <h4 class="mb-1"><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
+    <h4 class="mb-3"><i class="fa-solid fa-search"></i> Scan legacy image/file URLs</h4>
 
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
 
@@ -62,7 +66,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             </div>
             <p>
                 <button type="button" id="legacy-url-cc-scan-all" class="btn btn-primaryrc btn-sm">
-                    <i class="fas fa-search"></i> Scan all
+                    <i class="fa-solid fa-search"></i> Scan all
                 </button>
                 <span id="legacy-url-cc-progress" class="small text-muted ms-2" aria-live="polite"></span>
             </p>
@@ -100,14 +104,14 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                     </p>
                     <p>
                         <button type="button" id="legacy-url-cc-settings-scan" class="btn btn-primaryrc btn-sm">
-                            <i class="fas fa-search"></i> Scan Control Center settings
+                            <i class="fa-solid fa-search"></i> Scan Control Center settings
                         </button>
                         <span id="legacy-url-cc-settings-progress" class="small text-muted ms-2" aria-live="polite"></span>
                         <button type="button" id="legacy-url-cc-settings-details" class="btn btn-secondary btn-sm" disabled>
-                            <i class="fas fa-list"></i> Show scan details
+                            <i class="fa-solid fa-list"></i> Show scan details
                         </button>
                         <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger btn-sm" disabled>
-                            <i class="fas fa-wrench"></i> Fix all scanned URLs
+                            <i class="fa-solid fa-wrench"></i> Fix all scanned URLs
                         </button>
                     </p>
                     <div id="legacy-url-cc-settings-stats" class="row"></div>
@@ -154,7 +158,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 with the matching <code>table_prefix</code> value.</p>
             <p>
                 <button type="button" id="legacy-url-cc-community-scan" class="btn btn-primaryrc btn-sm">
-                    <i class="fas fa-search"></i> Rescan
+                    <i class="fa-solid fa-search"></i> Rescan
                 </button>
                 <span id="legacy-url-cc-community-progress" class="small text-muted ms-2" aria-live="polite"></span>
                 <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary btn-sm" disabled>Show all scan details</button>
@@ -341,7 +345,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 }
                 return '<tr><td>' + escapeHtml(surface.label) + '</td><td>' + result + '</td>'
                     + '<td class="text-end"><button type="button" class="btn btn-primaryrc btn-sm legacy-url-cc-scan"'
-                    + ' data-surface="' + escapeHtml(surface.surface_id) + '"><i class="fas fa-search"></i> Scan</button></td></tr>';
+                    + ' data-surface="' + escapeHtml(surface.surface_id) + '"><i class="fa-solid fa-search"></i> Scan</button></td></tr>';
             });
             $results.html(rows.length ? rows.join('') : '<tr><td colspan="3" class="text-muted">No scan surfaces are configured.</td></tr>');
             renderSettings(response.settings);
