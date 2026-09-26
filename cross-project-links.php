@@ -9,6 +9,10 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
 ?>
 <style>
     .legacy-cross-project-links { max-width: 960px; }
+    /* Keep REDCap's first-column override from giving checkboxes a different background. */
+    #cross-project-table > tbody > tr > td:first-child {
+        background-color: var(--bs-table-bg, transparent);
+    }
 </style>
 <div class="legacy-cross-project-links">
     <h4><i class="fas fa-exchange-alt"></i> Relocate cross-project file links</h4>
@@ -42,7 +46,7 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
     <div id="cross-project-result" class="alert alert-info" style="display:none" role="status"></div>
     <div id="cross-project-summary" class="small text-muted mb-2"></div>
     <div class="table-responsive">
-        <table id="cross-project-table" class="table table-striped table-sm" style="width:100%">
+        <table id="cross-project-table" class="table table-hover table-sm" style="width:100%">
             <thead><tr>
                 <th><input type="checkbox" id="cross-project-select-page" aria-label="Select visible links"></th>
                 <th>Location</th><th>File owner</th><th>File</th><th>Hash</th><th>Link</th>
@@ -147,27 +151,37 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
         const message = mode === 'public'
             ? 'Create public links for ' + count + ' selected file(s)? Anyone with those links can access the copies.'
             : 'Copy ' + count + ' selected file(s) into this project and replace their links?';
-        if (!window.confirm(message)) return;
-        setBusy('Processing ' + count + ' selected link(s)…');
-        module.ajax('cross-project-apply', {
-            scan_id: scanId, mode: mode, selected: Array.from(selected), folder: $('#cross-project-folder').val()
-        }).then(function (response) {
-            scanId = null;
-            selected.clear();
-            const failures = (response.outcomes || []).filter(item => item.result !== 'updated');
-            let message = response.updated + ' of ' + response.selected + ' link(s) updated.';
-            if (failures.length) message += ' ' + failures.length + ' skipped or failed: '
-                + failures.map(item => '#' + item.id + ' ' + item.result + (item.detail ? ' (' + item.detail + ')' : '')).join('; ');
-            if (response.audit_doc_id) message += ' Audit CSV: File Repository document ID ' + response.audit_doc_id + '.';
-            if (response.audit_error) message += ' Audit warning: ' + response.audit_error;
-            $result.text(message).show();
-            setIdle();
-            // A fresh scan reflects partial successes and any changed rows.
-            module.ajax('cross-project-scan', {}).then(render).catch(showError);
-        }).catch(function (error) {
-            showError(error);
-            setIdle();
-        });
+        simpleDialog(
+            '<p class="mb-0">' + escapeHtml(message) + '</p>',
+            mode === 'public' ? 'Create public links' : 'Relocate selected files',
+            null,
+            500,
+            null,
+            'Cancel',
+            function () {
+                setBusy('Processing ' + count + ' selected link(s)…');
+                module.ajax('cross-project-apply', {
+                    scan_id: scanId, mode: mode, selected: Array.from(selected), folder: $('#cross-project-folder').val()
+                }).then(function (response) {
+                    scanId = null;
+                    selected.clear();
+                    const failures = (response.outcomes || []).filter(item => item.result !== 'updated');
+                    let message = response.updated + ' of ' + response.selected + ' link(s) updated.';
+                    if (failures.length) message += ' ' + failures.length + ' skipped or failed: '
+                        + failures.map(item => '#' + item.id + ' ' + item.result + (item.detail ? ' (' + item.detail + ')' : '')).join('; ');
+                    if (response.audit_doc_id) message += ' Audit CSV: File Repository document ID ' + response.audit_doc_id + '.';
+                    if (response.audit_error) message += ' Audit warning: ' + response.audit_error;
+                    $result.text(message).show();
+                    setIdle();
+                    // A fresh scan reflects partial successes and any changed rows.
+                    module.ajax('cross-project-scan', {}).then(render).catch(showError);
+                }).catch(function (error) {
+                    showError(error);
+                    setIdle();
+                });
+            },
+            mode === 'public' ? 'Create public links' : 'Relocate selected'
+        );
     }
     $('#cross-project-table').on('change', '.cross-project-row', function () {
         const id = Number(this.value);
