@@ -25,6 +25,8 @@
 		"community-scan",
 		"community-details",
 		"community-apply",
+		"cross-project-control-center-status",
+		"cross-project-control-center-scan",
 		"cross-project-scan",
 		"cross-project-apply"
 	],
@@ -58,6 +60,12 @@
 				"name": "Scan legacy image/file URLs",
 				"icon": "fas fa-search",
 				"url": "legacy-url-fixer-control-center.php",
+				"show-header-and-footer": true
+			},
+			{
+				"name": "Scan for cross-project file links",
+				"icon": "fas fa-exchange-alt",
+				"url": "cross-project-links-control-center.php",
 				"show-header-and-footer": true
 			}
 		],

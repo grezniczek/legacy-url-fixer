@@ -9,6 +9,97 @@ trait CrossProjectLinks
 {
     private const CROSS_PROJECT_SCAN_KEY = 'cross-project-links-scan';
     private const CROSS_PROJECT_BATCH_LIMIT = 100;
+    private const CROSS_PROJECT_CC_CACHE_PREFIX = 'cross-project-control-center-';
+
+    /** Read-only inventory; never populates or changes a project's repair cache. */
+    private function scanCrossProjectControlCenterSurface($surfaceId): array
+    {
+        $surfaces = array_column($this->getControlCenterScanSurfaces(), null, 'id');
+        if (!is_string($surfaceId) || !isset($surfaces[$surfaceId])) {
+            throw new \Exception('The requested cross-project scan surface is not available.');
+        }
+        $scan = ['created_at' => date('c'), 'status' => 'complete', 'message' => null, 'projects' => []];
+        $resolved = $this->resolveSurface($surfaces[$surfaceId]);
+        if ($resolved['surface'] === null) {
+            $scan['status'] = 'unavailable';
+            $scan['message'] = $resolved['reason'];
+        } else {
+            $surface = $resolved['surface'];
+            $scope = $this->getControlCenterScopeClause($surface, false, 'all');
+            $candidate = $this->getCrossProjectCandidateWhereClause($surface['columns'], 't');
+            $columns = ['p.`project_id` AS `hosting_project_id`'];
+            foreach ($surface['columns'] as $column) {
+                $columns[] = 't.' . $this->identifier($column);
+            }
+            $result = $this->query(
+                'SELECT ' . implode(', ', $columns) . ' FROM ' . $this->identifier($surface['table']) . ' t'
+                . $scope['join'] . ' WHERE (' . $scope['sql'] . ') AND (' . $candidate['sql'] . ')',
+                $candidate['params']
+            );
+            $this->documentCache = [];
+            while ($row = $result->fetch_assoc()) {
+                $projectId = (int) $row['hosting_project_id'];
+                foreach ($surface['columns'] as $column) {
+                    $value = $row[$column] ?? null;
+                    if (!is_string($value) || !$this->containsPotentialUrl($value)) {
+                        continue;
+                    }
+                    preg_match_all(self::URL_PATTERN, $value, $matches);
+                    foreach ($matches[0] as $url) {
+                        if ($this->crossProjectUrl($url, $projectId) !== null) {
+                            $scan['projects'][$projectId] = ($scan['projects'][$projectId] ?? 0) + 1;
+                        }
+                    }
+                }
+            }
+        }
+        $encoded = json_encode($scan);
+        if ($encoded === false || strlen($encoded) > self::MAX_SCAN_CACHE_BYTES) {
+            throw new \Exception('The cross-project inventory is too large to cache safely.');
+        }
+        $this->framework->setSystemSetting(self::CROSS_PROJECT_CC_CACHE_PREFIX . $surfaceId, $encoded);
+        return $this->getCrossProjectControlCenterStatus();
+    }
+
+    private function getCrossProjectControlCenterStatus(): array
+    {
+        $surfaces = [];
+        $projects = [];
+        foreach ($this->getControlCenterScanSurfaces() as $surface) {
+            $raw = $this->framework->getSystemSetting(self::CROSS_PROJECT_CC_CACHE_PREFIX . $surface['id']);
+            $scan = is_string($raw) ? json_decode($raw, true) : null;
+            $scan = is_array($scan) ? $scan : [];
+            $surfaces[] = [
+                'id' => $surface['id'], 'label' => $surface['label'],
+                'created_at' => $scan['created_at'] ?? null,
+                'status' => $scan['status'] ?? 'not-scanned',
+                'message' => $scan['message'] ?? null,
+            ];
+            foreach ($scan['projects'] ?? [] as $projectId => $count) {
+                $projectId = (int) $projectId;
+                if (!isset($projects[$projectId])) {
+                    $projects[$projectId] = ['project_id' => $projectId, 'link_count' => 0, 'surfaces' => []];
+                }
+                $projects[$projectId]['link_count'] += (int) $count;
+                $projects[$projectId]['surfaces'][] = $surface['label'];
+            }
+        }
+        $rows = [];
+        if ($projects) {
+            // Resolve current titles and omit projects deleted since the scan.
+            $result = $this->query(
+                'SELECT project_id, app_title FROM redcap_projects WHERE date_deleted IS NULL AND project_id IN ('
+                . implode(',', array_fill(0, count($projects), '?')) . ') ORDER BY project_id',
+                array_keys($projects)
+            );
+            while ($row = $result->fetch_assoc()) {
+                $project = $projects[(int) $row['project_id']];
+                $project['title'] = $row['app_title'];
+                $rows[] = $project;
+            }
+        }
+        return ['surfaces' => $surfaces, 'projects' => $rows];
+    }
 
     private function crossProjectCacheKey(): string
     {

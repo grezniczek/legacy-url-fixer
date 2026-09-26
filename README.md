@@ -10,6 +10,7 @@ Install and enable the module as a REDCap External Module. Its configuration req
 
 - **For one project:** Open **Fix legacy image/file URLs** from the project's External Modules menu. The page scans automatically. Review **Show scan details**, optionally **Download CSV**, then use **Fix all scanned URLs** for the repairable findings.
 - **Across projects:** A REDCap super user can open **Scan legacy image/file URLs** in the Control Center. The **Project configuration** tab identifies affected project IDs; follow a project link to inspect and fix its content.
+- **For cross-project links:** Open **Scan for cross-project file links** in the Control Center to identify affected projects regardless of hash. Review and repair links in each project's **Relocate cross-project file links** report.
 - **For global settings or Community Sites:** Use the corresponding Control Center tab to scan, review details, and fix verified legacy URLs there.
 
 After a repair, run a fresh scan to see the current state. The project page reloads and shows a result toast; the Control Center tabs provide a **Rescan** or scan button.
@@ -21,6 +22,7 @@ After a repair, run a fresh scan to see the current state. The project page relo
 | Project page | Authored configuration belonging to one project | On the project page |
 | Control Center: Project configuration | One physical project-configuration table at a time across non-deleted projects | On each linked project page |
 | Control Center: Control Center settings | A fixed list of authored `redcap_config` values | In that tab |
+| Control Center: Cross-project file links | Authored project configuration linking to files owned by another project, regardless of hash | On each linked project report |
 | Control Center: Community Sites | The `body` column of discovered Community Platform posts tables | In that tab |
 
 Project configuration includes data dictionaries, survey settings, automated survey invitations, pending survey invitations, alerts, reports, project and record dashboards, descriptive popups, e-Consent settings, and Multi-Language Management content. The module uses a fixed list of content columns and checks that each exists in the installed REDCap schema. It does not scan every text column.
@@ -69,6 +71,14 @@ The DataTables report has one row per link. Select rows across pages, then choos
 - **Create public links for selected** copies each file into the project containing the link and replaces the selected URL with a direct public image or download link. Choose a File Repository folder, or use **Miscellaneous File Attachments**. Regular folders require public File Repository sharing to be enabled; the miscellaneous attachment route follows REDCap's special attachment behavior. Anyone with the new public link can access the copied file.
 
 The report rechecks permissions, the source document, and the scanned cell before each batch. Production active data-dictionary rows are read-only; enter Draft Mode to update the draft copy. Batch outcomes are logged and an audit CSV is saved in the project's File Repository. A changed cell is skipped. If a file was copied but its link could not be written, the outcome reports that the copy remains in the project.
+
+### Control Center cross-project inventory
+
+Super users can open **Scan for cross-project file links**, a separate Control Center page with no repair actions. **Scan all projects** scans each project content surface sequentially. The searchable, sortable results table lists affected project IDs, current project titles, link occurrence counts, and content surfaces. Follow a project ID to its report, where selected links can be relocated or replaced with public links. Enable the module in that project if needed.
+
+This inventory includes all non-deleted projects, including completed projects and projects marked done for legacy URL repairs. It uses the project report's link detection, including current, legacy, mismatched, and missing hashes. Ordinary record data and Community Sites are excluded. Active and applicable draft copies count separately.
+
+Each surface caches only project IDs, counts, and scan status/timestamp, independently of project repair caches. **Rescan all projects** refreshes the inventory after repairs. Expand **Scan coverage and timestamps** to check unavailable surfaces or results from different runs after an interrupted scan; a partially scanned inventory is not proof that no other projects are affected.
 
 ## Understanding results
 

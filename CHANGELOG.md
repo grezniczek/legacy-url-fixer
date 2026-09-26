@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a separate, read-only Control Center inventory of projects with cross-project file links, with cached per-surface scans and links to project reports for repairs.
+
 - Added a project-only report for selecting cross-project image and download links and copying their files into the link-hosting project, with an optional direct public File Repository link.
 
 ## 0.8.0

@@ -91,6 +91,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if (in_array($action, [
             'control-center-scan',
             'control-center-status',
+            'cross-project-control-center-status',
+            'cross-project-control-center-scan',
             'control-center-settings-scan',
             'control-center-settings-details',
             'control-center-settings-apply',
@@ -100,6 +102,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'community-apply',
         ], true)) {
             $this->requireControlCenterAccess();
+            if ($action === 'cross-project-control-center-status') {
+                return $this->getCrossProjectControlCenterStatus();
+            }
+            if ($action === 'cross-project-control-center-scan') {
+                return $this->scanCrossProjectControlCenterSurface(
+                    is_array($payload) ? ($payload['surface_id'] ?? null) : null
+                );
+            }
             if ($action === 'community-status') {
                 return $this->getCommunityScanSummary();
             }
