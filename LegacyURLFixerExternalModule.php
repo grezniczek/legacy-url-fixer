@@ -4,6 +4,8 @@ namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
 
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/CrossProjectLinks.php';
+
 /**
  * Finds and repairs stored REDCap image/file URLs that use the pre-September
  * 2026 document hash algorithm.
@@ -14,6 +16,7 @@ use ExternalModules\ExternalModules;
  */
 class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModule
 {
+    use CrossProjectLinks;
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
@@ -149,6 +152,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         if ($action === 'scan') {
             return $this->runScan($project);
+        }
+
+        if ($action === 'cross-project-scan') {
+            return $this->scanCrossProjectLinks($project);
+        }
+
+        if ($action === 'cross-project-apply') {
+            return $this->applyCrossProjectLinks($project, is_array($payload) ? $payload : []);
         }
 
         if ($action === 'status') {
@@ -1451,7 +1462,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->documentCache[$documentKey];
         }
 
-        $sql = 'SELECT e.doc_id, e.project_id, p.__SALT__'
+        $sql = 'SELECT e.doc_id, e.project_id, e.doc_name, e.delete_date, e.date_deleted_server, p.__SALT__, p.project_id AS owner_project_exists, p.date_deleted AS project_deleted'
             . ' FROM redcap_edocs_metadata e'
             . ' LEFT JOIN redcap_projects p ON p.project_id = e.project_id'
             . ' WHERE e.doc_id = ?';

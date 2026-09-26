@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added a project-only report for selecting cross-project image and download links and copying their files into the link-hosting project, with an optional direct public File Repository link.
+
 ## 0.8.0
 
 - Added Community Site discovery and post-body scanning, details, and repair in a Control Center tab.

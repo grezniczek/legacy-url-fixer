@@ -1,7 +1,7 @@
 {
 	"name": "Legacy URL Fixer",
 	"namespace": "DE\\RUB\\SEG\\LegacyURLFixerExternalModule",
-	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration, system settings, and Community Sites.",
+	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration, system settings, and Community Sites, and relocates cross-project file links.",
 	"documentation": "README.md",
 	"authors": [
 		{
@@ -24,7 +24,9 @@
 		"community-status",
 		"community-scan",
 		"community-details",
-		"community-apply"
+		"community-apply",
+		"cross-project-scan",
+		"cross-project-apply"
 	],
 	"project-settings": [
 		{
@@ -64,6 +66,12 @@
 				"name": "Fix legacy image/file URLs",
 				"icon": "fas fa-link",
 				"url": "legacy-url-fixer.php",
+				"show-header-and-footer": true
+			},
+			{
+				"name": "Relocate cross-project file links",
+				"icon": "fas fa-exchange-alt",
+				"url": "cross-project-links.php",
 				"show-header-and-footer": true
 			}
 		]

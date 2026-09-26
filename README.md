@@ -1,6 +1,6 @@
 # Legacy URL Fixer
 
-Legacy URL Fixer finds and repairs stored REDCap image and download links whose document hashes use the algorithm replaced in September 2026. It covers authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies.
+Legacy URL Fixer finds and repairs stored REDCap image and download links whose document hashes use the algorithm replaced in September 2026. It covers authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies. A separate project report helps relocate links to files owned by another project.
 
 The module changes a URL only when it can verify the referenced e-document, its owning project, and the supplied legacy hash. Links it cannot verify are listed for review.
 
@@ -59,6 +59,17 @@ The tab scans `<prefix>_posts.body`, the Community Platform's rich-text post con
 
 The first visit to the tab runs a scan if none is cached. Use **Rescan** to refresh it. Results show separate update, current, and review counts for each site. **Show all scan details** covers all sites; a site's **Details** button limits the view and CSV export to that site. **Fix all scanned URLs** applies verified repairs across the matched sites in the cached scan.
 
+## Cross-project file link report
+
+Open **Relocate cross-project file links** from a project's External Modules menu. This separate report scans the same authored project surfaces as the project legacy-URL scan, regardless of whether a link has a current, legacy, or mismatched document hash. It recognizes supported absolute image and download URLs on this REDCap host with an existing document ID. It does not scan record data or Community Sites. The report includes a link only when you have Design rights in both the project containing the link and the project owning the referenced file.
+
+The DataTables report has one row per link. Select rows across pages, then choose one of two actions (up to 100 links per batch):
+
+- **Relocate selected** copies each referenced file into the project containing the link, registers the copy as a miscellaneous attachment, and changes only the selected URL to reference the new document ID and hash. The source file stays in its original project.
+- **Create public links for selected** copies each file into the project containing the link and replaces the selected URL with a direct public image or download link. Choose a File Repository folder, or use **Miscellaneous File Attachments**. Regular folders require public File Repository sharing to be enabled; the miscellaneous attachment route follows REDCap's special attachment behavior. Anyone with the new public link can access the copied file.
+
+The report rechecks permissions, the source document, and the scanned cell before each batch. Production active data-dictionary rows are read-only; enter Draft Mode to update the draft copy. Batch outcomes are logged and an audit CSV is saved in the project's File Repository. A changed cell is skipped. If a file was copied but its link could not be written, the outcome reports that the copy remains in the project.
+
 ## Understanding results
 
 The scanner recognizes absolute `DataEntry/image_view.php` and `DataEntry/file_download.php` links, including survey passthru links. It checks the configured REDCap host, the static document ID, the referenced e-document, project ownership, and the supplied `doc_id_hash`.
@@ -72,7 +83,7 @@ The scanner recognizes absolute `DataEntry/image_view.php` and `DataEntry/file_d
 
 A project scan also counts **Current cross-project URLs** when cross-project repair is enabled. Details identify the owning project for review. A current hash alone does not prove a link into a deleted project is accessible.
 
-**Cells to update** counts stored text values; **URLs to update** counts repairable links within them. One cell, such as a Community post body, can contain several URLs. **Fix all scanned URLs** repairs every eligible URL in each selected cell. There is currently no per-link repair button.
+**Cells to update** counts stored text values; **URLs to update** counts repairable links within them. One cell, such as a Community post body, can contain several URLs. **Fix all scanned URLs** repairs every eligible URL in each selected cell. The legacy-hash fix has no per-link repair button; the separate cross-project report acts on selected individual links.
 
 Links to another REDCap host, missing documents, invalid ID/hash pairs, system links to project-owned documents, and disallowed cross-project links stay unchanged. The module does not generate a replacement merely because a document ID exists. When a verified download URL has companion hash parameters, the repair updates them as needed; a numeric `pid` parameter is normalized to the e-document's owning project.
 
