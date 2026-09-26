@@ -1,5 +1,5 @@
 {
-	"name": "Legacy URL Fixer",
+	"name": "Link Inspector & Repair",
 	"namespace": "DE\\RUB\\SEG\\LegacyURLFixerExternalModule",
 	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration, system settings, and Community Sites, and relocates cross-project file links.",
 	"documentation": "README.md",
@@ -33,7 +33,7 @@
 	"project-settings": [
 		{
 			"key": "control-center-scan-done",
-			"name": "Done with Legacy URL Fixer Control Center scans",
+			"name": "Done with LIR legacy URL Control Center scans",
 			"description": "Exclude this project from future Control Center project-configuration scans and hide it from cached project lists. Project scans and repairs remain available.",
 			"type": "checkbox"
 		},
@@ -57,13 +57,13 @@
 	"links": {
 		"control-center": [
 			{
-				"name": "Scan legacy image/file URLs",
+				"name": "LIR: Scan legacy image/file URLs",
 				"icon": "fas fa-search",
 				"url": "legacy-url-fixer-control-center.php",
 				"show-header-and-footer": true
 			},
 			{
-				"name": "Scan for cross-project file links",
+				"name": "LIR: Scan for cross-project file links",
 				"icon": "fas fa-exchange-alt",
 				"url": "cross-project-links-control-center.php",
 				"show-header-and-footer": true
@@ -71,13 +71,13 @@
 		],
 		"project": [
 			{
-				"name": "Fix legacy image/file URLs",
+				"name": "LIR: Fix legacy image/file URLs",
 				"icon": "fas fa-link",
 				"url": "legacy-url-fixer.php",
 				"show-header-and-footer": true
 			},
 			{
-				"name": "Relocate cross-project file links",
+				"name": "LIR: Relocate cross-project file links",
 				"icon": "fas fa-exchange-alt",
 				"url": "cross-project-links.php",
 				"show-header-and-footer": true

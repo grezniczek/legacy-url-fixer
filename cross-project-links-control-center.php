@@ -15,7 +15,7 @@ $projectReportUrl = $module->getUrl('cross-project-links.php');
     }
 </style>
 <div style="max-width:1100px">
-    <h4><i class="fas fa-exchange-alt"></i> Scan for cross-project file links</h4>
+    <h4><i class="fas fa-exchange-alt"></i> LIR: Scan for cross-project file links</h4>
     <p>
         Find projects whose authored configuration contains image or download links to files owned by another project,
         regardless of the link's hash. Open a project report to review and relocate its links.

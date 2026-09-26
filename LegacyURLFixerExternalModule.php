@@ -187,7 +187,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->applyCachedScan($project, $requestedScanId);
         }
 
-        throw new \Exception('Unsupported Legacy URL Fixer action.');
+        throw new \Exception('Unsupported Link Inspector & Repair action.');
     }
 
     private function requireControlCenterAccess(): void
@@ -2097,7 +2097,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         try {
             $docId = $this->saveFile($path, $projectId);
-            if (!is_numeric($docId) || !\REDCap::addFileToRepository((int) $docId, $projectId, 'Legacy URL Fixer batch audit')) {
+            if (!is_numeric($docId) || !\REDCap::addFileToRepository((int) $docId, $projectId, 'Link Inspector & Repair batch audit')) {
                 return ['doc_id' => null, 'error' => 'The audit file could not be saved to the File Repository.'];
             }
             return ['doc_id' => (int) $docId, 'error' => null];

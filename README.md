@@ -1,16 +1,16 @@
-# Legacy URL Fixer
+# Link Inspector & Repair
 
-Legacy URL Fixer finds and repairs stored REDCap image and download links whose document hashes use the algorithm replaced in September 2026. It covers authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies. A separate project report helps relocate links to files owned by another project.
+Link Inspector & Repair (LIR) finds, repairs, and relocates REDCap image and file links. It repairs outdated document hashes in authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies. Cross-project reports identify links to files owned by another project and let users copy those files into the project containing the link, optionally creating direct public File Repository links.
 
-The module changes a URL only when it can verify the referenced e-document, its owning project, and the supplied legacy hash. Links it cannot verify are listed for review.
+Legacy-hash repairs require a verified e-document, owning project, and legacy hash. Cross-project relocation uses a separate, explicitly selected workflow that works regardless of hash. Links it cannot verify are listed for review.
 
 ## Getting started
 
 Install and enable the module as a REDCap External Module. Its configuration requires External Module Framework version 16. The `_v9.9.9` directory name in this development checkout is a development convention, not a release version. Project-page scans and repairs require Design rights in that project; Control Center actions require a REDCap super user.
 
-- **For one project:** Open **Fix legacy image/file URLs** from the project's External Modules menu. The page scans automatically. Review **Show scan details**, optionally **Download CSV**, then use **Fix all scanned URLs** for the repairable findings.
-- **Across projects:** A REDCap super user can open **Scan legacy image/file URLs** in the Control Center. The **Project configuration** tab identifies affected project IDs; follow a project link to inspect and fix its content.
-- **For cross-project links:** Open **Scan for cross-project file links** in the Control Center to identify affected projects regardless of hash. Review and repair links in each project's **Relocate cross-project file links** report.
+- **For one project:** Open **LIR: Fix legacy image/file URLs** from the project's External Modules menu. The page scans automatically. Review **Show scan details**, optionally **Download CSV**, then use **Fix all scanned URLs** for the repairable findings.
+- **Across projects:** A REDCap super user can open **LIR: Scan legacy image/file URLs** in the Control Center. The **Project configuration** tab identifies affected project IDs; follow a project link to inspect and fix its content.
+- **For cross-project links:** Open **LIR: Scan for cross-project file links** in the Control Center to identify affected projects regardless of hash. Review and repair links in each project's **LIR: Relocate cross-project file links** report.
 - **For global settings or Community Sites:** Use the corresponding Control Center tab to scan, review details, and fix verified legacy URLs there.
 
 After a repair, run a fresh scan to see the current state. The project page reloads and shows a result toast; the Control Center tabs provide a **Rescan** or scan button.
@@ -43,7 +43,7 @@ The Control Center **Data dictionary (active table)** scan always reads `redcap_
 
 The **Project configuration** tab caches affected project IDs for each surface, not URLs or repair previews. A project appears when a scanned surface contains a repairable URL or one needing review. The linked project page provides the details and repair action.
 
-You can scan one surface or use **Scan all** to run the project surfaces in sequence and then scan Control Center settings. **Scan all does not scan Community Sites**; open that tab to scan them. The **Ignore completed projects** checkbox excludes projects with a REDCap completion time from new scans. The activity filter can limit scans to projects active in the last 3, 6, or 12 months, or apply no limit. Neither filter limits the global settings scan. The project setting **Done with Legacy URL Fixer Control Center scans** hides that project from new and cached Control Center project lists; its project page remains available.
+You can scan one surface or use **Scan all** to run the project surfaces in sequence and then scan Control Center settings. **Scan all does not scan Community Sites**; open that tab to scan them. The **Ignore completed projects** checkbox excludes projects with a REDCap completion time from new scans. The activity filter can limit scans to projects active in the last 3, 6, or 12 months, or apply no limit. Neither filter limits the global settings scan. The project setting **Done with LIR legacy URL Control Center scans** hides that project from new and cached Control Center project lists; its project page remains available.
 
 These lists are snapshots. Rescan a surface after project repairs to refresh its affected project IDs.
 
@@ -63,7 +63,7 @@ The first visit to the tab runs a scan if none is cached. Use **Rescan** to refr
 
 ## Cross-project file link report
 
-Open **Relocate cross-project file links** from a project's External Modules menu. This separate report scans the same authored project surfaces as the project legacy-URL scan, regardless of whether a link has a current, legacy, or mismatched document hash. It recognizes supported absolute image and download URLs on this REDCap host with an existing document ID. It does not scan record data or Community Sites. The report includes a link only when you have Design rights in both the project containing the link and the project owning the referenced file.
+Open **LIR: Relocate cross-project file links** from a project's External Modules menu. This separate report scans the same authored project surfaces as the project legacy-URL scan, regardless of whether a link has a current, legacy, or mismatched document hash. It recognizes supported absolute image and download URLs on this REDCap host with an existing document ID. It does not scan record data or Community Sites. The report includes a link only when you have Design rights in both the project containing the link and the project owning the referenced file.
 
 The DataTables report has one row per link. Select rows across pages, then choose one of two actions (up to 100 links per batch):
 
@@ -74,7 +74,7 @@ The report rechecks permissions, the source document, and the scanned cell befor
 
 ### Control Center cross-project inventory
 
-Super users can open **Scan for cross-project file links**, a separate Control Center page with no repair actions. **Scan all projects** scans each project content surface sequentially. The searchable, sortable results table lists affected project IDs, current project titles, link occurrence counts, and content surfaces. Follow a project ID to its report, where selected links can be relocated or replaced with public links. Enable the module in that project if needed.
+Super users can open **LIR: Scan for cross-project file links**, a separate Control Center page with no repair actions. **Scan all projects** scans each project content surface sequentially. The searchable, sortable results table lists affected project IDs, current project titles, link occurrence counts, and content surfaces. Follow a project ID to its report, where selected links can be relocated or replaced with public links. Enable the module in that project if needed.
 
 This inventory includes all non-deleted projects, including completed projects and projects marked done for legacy URL repairs. It uses the project report's link detection, including current, legacy, mismatched, and missing hashes. Ordinary record data and Community Sites are excluded. Active and applicable draft copies count separately.
 

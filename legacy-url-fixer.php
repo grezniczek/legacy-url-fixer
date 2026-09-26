@@ -6,7 +6,7 @@ ExternalModules::requireDesignRights();
 
 ?>
 <div class="legacy-url-fixer" style="max-width: 960px">
-    <h4><i class="fas fa-link"></i> Fix legacy image/file URLs</h4>
+    <h4><i class="fas fa-link"></i> LIR: Fix legacy image/file URLs</h4>
 
     <?php if (isset($Proj->project['status']) && (int) $Proj->project['status'] > 0): ?>
         <div class="alert alert-info">
