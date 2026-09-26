@@ -1,7 +1,7 @@
 {
 	"name": "Link Inspector & Repair",
 	"namespace": "DE\\RUB\\SEG\\LegacyURLFixerExternalModule",
-	"description": "Scans and repairs legacy REDCap image/file URLs in project configuration, system settings, and Community Sites, and relocates cross-project file links.",
+	"description": "Scans and repairs legacy REDCap image/file links in project configuration, system settings, and Community Sites, and relocates cross-project file links.",
 	"documentation": "README.md",
 	"authors": [
 		{
@@ -33,14 +33,14 @@
 	"project-settings": [
 		{
 			"key": "control-center-scan-done",
-			"name": "Done with LIR legacy URL Control Center scans",
+			"name": "Done with LIR legacy link Control Center scans",
 			"description": "Exclude this project from future Control Center project-configuration scans and hide it from cached project lists. Project scans and repairs remain available.",
 			"type": "checkbox"
 		},
 		{
 			"key": "allow-cross-project-edoc-repair",
-			"name": "Allow cross-project e-document URL repairs",
-			"description": "Disabled by default. Enable only for intentional links copied from another project. The URL must still use the configured REDCap host and have an exact valid document hash for the e-document's owning project.",
+			"name": "Allow cross-project e-document link repairs",
+			"description": "Disabled by default. Enable only for intentional links copied from another project. The link must still use the configured REDCap host and have an exact valid document hash for the e-document's owning project.",
 			"type": "checkbox",
 			"super-users-only": true
 		}
@@ -48,8 +48,8 @@
 	"system-settings": [
 		{
 			"key": "force-cross-project-edoc-repair",
-			"name": "Force cross-project e-document URL repairs for all projects",
-			"description": "Disabled by default. When enabled, this Control Center setting overrides the project setting and permits verified legacy URLs to reference an e-document owned by another project. The configured REDCap host and exact document hash are still required.",
+			"name": "Force cross-project e-document link repairs for all projects",
+			"description": "Disabled by default. When enabled, this Control Center setting overrides the project setting and permits verified legacy links to reference an e-document owned by another project. The configured REDCap host and exact document hash are still required.",
 			"type": "checkbox",
 			"super-users-only": true
 		}

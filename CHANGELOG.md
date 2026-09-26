@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Standardized user-facing wording on “links” in page text, settings, messages, CSV headings, and documentation.
+
 - Renamed the module to **Link Inspector & Repair (LIR)** and prefixed Control Center and project menu links with **LIR:**. Existing module identifiers and settings are preserved.
 
 - Added a separate, read-only Control Center inventory of projects with cross-project file links, with cached per-surface scans and links to project reports for repairs.

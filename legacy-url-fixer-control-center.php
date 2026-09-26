@@ -16,7 +16,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 ?>
 <div class="legacy-url-fixer-control-center" style="max-width: 1100px">
     <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
-    <h4 class="mb-3"><i class="fa-solid fa-search"></i> Scan legacy image/file URLs</h4>
+    <h4 class="mb-3"><i class="fa-solid fa-search"></i> Scan legacy image/file links</h4>
 
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
 
@@ -48,7 +48,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             <p>
                 Scan one project configuration surface at a time across non-deleted projects. Each completed scan is
                 cached system-wide as the affected project IDs only. Affected projects have either a repairable
-                legacy URL or a URL requiring review. Use a linked project ID to review and fix project content.
+                legacy link or a link requiring review. Use a linked project ID to review and fix project content.
                 Mark a project done in its module settings to omit it from Control Center results.
             </p>
             <div class="mb-3">
@@ -99,7 +99,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 <div class="card-body">
                     <p>
                         Scan the fixed set of authored system settings stored in <code>redcap_config</code>. These
-                        global settings may be reviewed and fixed here. Their URLs must reference system eDocs
+                        global settings may be reviewed and fixed here. Their links must reference system eDocs
                         (<code>redcap_edocs_metadata.project_id IS NULL</code>); a project-owned eDoc is review-only.
                     </p>
                     <p>
@@ -111,7 +111,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                             <i class="fa-solid fa-list"></i> Show scan details
                         </button>
                         <button type="button" id="legacy-url-cc-settings-apply" class="btn btn-danger btn-sm" disabled>
-                            <i class="fa-solid fa-wrench"></i> Fix all scanned URLs
+                            <i class="fa-solid fa-wrench"></i> Fix all scanned links
                         </button>
                     </p>
                     <div id="legacy-url-cc-settings-stats" class="row"></div>
@@ -162,7 +162,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 </button>
                 <span id="legacy-url-cc-community-progress" class="small text-muted ms-2" aria-live="polite"></span>
                 <button type="button" id="legacy-url-cc-community-details" class="btn btn-secondary btn-sm" disabled>Show all scan details</button>
-                <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger btn-sm" disabled>Fix all scanned URLs</button>
+                <button type="button" id="legacy-url-cc-community-apply" class="btn btn-danger btn-sm" disabled>Fix all scanned links</button>
             </p>
             <div id="legacy-url-cc-community-summary" class="mb-2 text-muted">Open this tab to scan.</div>
             <div id="legacy-url-cc-community-stats" class="row mb-2"></div>
@@ -309,9 +309,9 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             const stats = scan.stats || {};
             $settingsStats.html(
                 stat('Settings to update', stats.changed_cells || 0)
-                + stat('URLs to update', stats.changed_urls || 0, true)
-                + stat('Valid current URLs', stats.current_urls || 0)
-                + stat('URLs needing review', stats.issues || 0, true)
+                + stat('Links to update', stats.changed_urls || 0, true)
+                + stat('Valid current links', stats.current_urls || 0)
+                + stat('Links needing review', stats.issues || 0, true)
             );
             const issueReasons = stats.issues_by_reason || {};
             const issueSummary = Object.keys(issueReasons).map(function (reason) {
@@ -413,11 +413,11 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 let contents = '';
                 if (detail.state === 'repair') {
                     action = '<span class="badge bg-success">Will update</span>';
-                    contents = urlPreview('Current URL', detail.url) + urlPreview('Replacement URL', detail.replacement);
+                    contents = urlPreview('Current link', detail.url) + urlPreview('Replacement link', detail.replacement);
                 } else if (detail.state === 'review') {
                     action = '<span class="badge bg-warning text-dark">Review</span>';
-                    contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported URL format') + '</div>'
-                        + urlPreview('Current URL', detail.url);
+                    contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported link format') + '</div>'
+                        + urlPreview('Current link', detail.url);
                 } else {
                     action = '<span class="badge bg-secondary">Refresh needed</span>';
                     contents = escapeHtml(detail.reason || 'The scanned setting is no longer available.');
@@ -556,8 +556,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
             try {
                 await LegacyUrlScanCsv.download({
                     filename: 'legacy-url-settings-' + scanId.slice(0, 12) + '.csv',
-                    headers: ['Action', 'Setting', 'Table', 'Column', 'Row key', 'Current URL',
-                        'Replacement URL', 'Reason'],
+                    headers: ['Action', 'Setting', 'Table', 'Column', 'Row key', 'Current link',
+                        'Replacement link', 'Reason'],
                     fetchPage: function (offset) {
                         return module.ajax('control-center-settings-details', {scan_id: scanId, offset: offset});
                     },
@@ -579,12 +579,12 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         $settingsApply.on('click', function () {
             if (!settingsScan) return;
             confirmWithSimpleDialog(
-                'Update every repairable legacy URL in the cached Control Center settings scan? URLs requiring review will remain unchanged.',
-                'Fix scanned Control Center settings URLs',
-                'Fix URLs'
+                'Update every repairable legacy link in the cached Control Center settings scan? Links requiring review will remain unchanged.',
+                'Fix scanned Control Center settings links',
+                'Fix links'
             ).then(function (confirmed) {
                 if (!confirmed) return null;
-                setBusy('Fixing scanned Control Center settings URLs…');
+                setBusy('Fixing scanned Control Center settings links…');
                 return module.ajax('control-center-settings-apply', {scan_id: settingsScan.scan_id}).then(function (result) {
                     return module.ajax('control-center-status', {}).then(function (status) {
                         renderStatus(status);
@@ -593,7 +593,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                             .removeClass('alert-danger')
                             .addClass('alert-success')
                             .text('Updated ' + (counts.updated_cells || 0) + ' setting(s) and '
-                                + (counts.updated_urls || 0) + ' URL(s). Skipped changed: '
+                                + (counts.updated_urls || 0) + ' link(s). Skipped changed: '
                                 + (counts.skipped_changed || 0) + '; skipped no longer needed: '
                                 + (counts.skipped_no_longer_needed || 0) + '; errors: '
                                 + (counts.errors || 0) + '. The batch summary was logged by the module.')
@@ -628,9 +628,9 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 : 'No Community Site table pairs were found. Scanned on ' + communityResult.created_at + '.');
             $stats.html(
                 stat('Sites found', sites.length)
-                + stat('URLs to update', totals.changed_urls || 0, true)
-                + stat('Valid current URLs', totals.current_urls || 0)
-                + stat('URLs needing review', totals.issues || 0, true)
+                + stat('Links to update', totals.changed_urls || 0, true)
+                + stat('Valid current links', totals.current_urls || 0)
+                + stat('Links needing review', totals.issues || 0, true)
             );
             $rows.html(sites.map(function (site) {
                 const project = site.project_id
@@ -680,10 +680,10 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                     let action, contents;
                     if (detail.state === 'repair') {
                         action = '<span class="badge bg-success">Will update</span>';
-                        contents = urlPreview('Current URL', detail.url) + urlPreview('Replacement URL', detail.replacement);
+                        contents = urlPreview('Current link', detail.url) + urlPreview('Replacement link', detail.replacement);
                     } else if (detail.state === 'review') {
                         action = '<span class="badge bg-warning text-dark">Review</span>';
-                        contents = escapeHtml(detail.reason || '') + urlPreview('Current URL', detail.url);
+                        contents = escapeHtml(detail.reason || '') + urlPreview('Current link', detail.url);
                     } else {
                         action = '<span class="badge bg-secondary">Refresh needed</span>';
                         contents = escapeHtml(detail.reason || 'Post changed');
@@ -738,7 +738,7 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
                 await LegacyUrlScanCsv.download({
                     filename: 'legacy-url-community-' + (prefix === null ? 'all' : prefix)
                         + '-' + scanId.slice(0, 12) + '.csv',
-                    headers: ['Action', 'Table prefix', 'Post ID', 'Current URL', 'Replacement URL', 'Reason'],
+                    headers: ['Action', 'Table prefix', 'Post ID', 'Current link', 'Replacement link', 'Reason'],
                     fetchPage: function (offset) {
                         return module.ajax('community-details', {scan_id: scanId, offset: offset, prefix: prefix});
                     },
@@ -762,17 +762,17 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
         $communityApply.on('click', function () {
             if (!communityResult) return;
             confirmWithSimpleDialog(
-                'Update every repairable legacy URL in the cached Community Site scan? URLs requiring review remain unchanged.',
-                'Fix scanned Community Site URLs', 'Fix URLs'
+                'Update every repairable legacy link in the cached Community Site scan? Links requiring review remain unchanged.',
+                'Fix scanned Community Site links', 'Fix links'
             ).then(function (confirmed) {
                 if (!confirmed) return;
-                setBusy('Fixing Community Site URLs…');
+                setBusy('Fixing Community Site links…');
                 module.ajax('community-apply', {scan_id: communityResult.scan_id}).then(function (result) {
                     communityResult = null;
                     const counts = result.counts || {};
                     $('#legacy-url-cc-community-apply-result').removeClass('alert-danger').addClass('alert-success')
                         .text('Updated ' + (counts.updated_cells || 0) + ' post(s) and '
-                            + (counts.updated_urls || 0) + ' URL(s). Skipped changed: '
+                            + (counts.updated_urls || 0) + ' link(s). Skipped changed: '
                             + (counts.skipped_changed || 0) + '; no longer needed: '
                             + (counts.skipped_no_longer_needed || 0) + '; errors: '
                             + (counts.errors || 0) + '. Rescan to refresh results.')

@@ -30,8 +30,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     ];
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
-    private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary URL';
-    private const DRAFT_CHANGES_PENDING_REASON = 'Repair the draft copy if needed, then apply Draft Mode changes to update this active URL';
+    private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary link';
+    private const DRAFT_CHANGES_PENDING_REASON = 'Repair the draft copy if needed, then apply Draft Mode changes to update this active link';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -657,7 +657,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
             $outcomes[] = $outcome;
         }
-        $this->log('Community Site legacy URL repair batch completed', [
+        $this->log('Community Site legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -905,7 +905,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
         }
 
-        $this->log('Control Center legacy URL repair batch completed', [
+        $this->log('Control Center legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -1188,7 +1188,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         $audit = $this->saveAuditFile($projectId, $scan, $outcomes);
-        $this->log('Legacy URL repair batch completed', [
+        $this->log('Legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -1350,7 +1350,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
             if ($urlResult['state'] === 'issue') {
                 $result['issues']++;
-                $reason = $urlResult['reason'] ?? 'Unsupported URL format';
+                $reason = $urlResult['reason'] ?? 'Unsupported link format';
                 $result['issues_by_reason'][$reason] = ($result['issues_by_reason'][$reason] ?? 0) + 1;
                 $result['matches'][] = [
                     'state' => 'review',
@@ -1384,10 +1384,10 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $url = trim(html_entity_decode($originalUrl, ENT_QUOTES | ENT_HTML5));
         $parts = parse_url($url);
         if ($parts === false || !isset($parts['query'])) {
-            return ['state' => 'issue', 'reason' => 'The URL cannot be parsed or has no query string'];
+            return ['state' => 'issue', 'reason' => 'The link cannot be parsed or has no query string'];
         }
         if (!$this->isConfiguredRedcapHost($parts)) {
-            return ['state' => 'issue', 'reason' => 'The URL points to a different REDCap host'];
+            return ['state' => 'issue', 'reason' => 'The link points to a different REDCap host'];
         }
 
         parse_str($parts['query'], $parameters);
@@ -1410,7 +1410,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $isImage = $this->endsWith($path, 'DataEntry/image_view.php') || $passthru === 'DataEntry/image_view.php';
         $isDownload = $this->endsWith($path, 'DataEntry/file_download.php') || $passthru === 'DataEntry/file_download.php';
         if (!$isImage && !$isDownload) {
-            return ['state' => 'issue', 'reason' => 'The URL is not a supported image or file endpoint'];
+            return ['state' => 'issue', 'reason' => 'The link is not a supported image or file endpoint'];
         }
 
         $document = $this->getDocument($docId);

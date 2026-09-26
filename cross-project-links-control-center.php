@@ -26,7 +26,7 @@ $projectReportUrl = $module->getUrl('cross-project-links.php');
         Repairs are performed in projects only.
     </p>
     <p class="small text-muted">
-        Covers all non-deleted projects, including completed projects and projects marked done for legacy URL repairs.
+        Covers all non-deleted projects, including completed projects and projects marked done for legacy link repairs.
         Record data and Community Sites are excluded. Active and applicable draft content are counted separately.
         Each surface is scanned in turn; cached results remain a snapshot until rescanned.
         Enable this module in a project if needed to open its report.

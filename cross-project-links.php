@@ -23,7 +23,7 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
     <div class="projhdr mb-1"><i class="fa-solid fa-exchange-alt"></i> Relocate cross-project file links</div>
     <p>
         This report finds image and download links in this project's authored configuration when the referenced file belongs
-        to another project. It includes current, legacy, and mismatched hashes for supported URLs on this REDCap host. Only links to projects where you also have
+        to another project. It includes current, legacy, and mismatched hashes for supported links on this REDCap host. Only links to projects where you also have
         Design rights appear. Record data and Community Sites are outside this report.
     </p>
     <div class="alert alert-light border py-2">
