@@ -636,7 +636,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     } else {
                         $update = $this->createQuery();
                         $update->add('UPDATE ' . $this->identifier($site['table'])
-                            . ' SET body = ? WHERE post_id = ? AND body = ?',
+                            . ' SET body = ? WHERE post_id = ? AND CAST(body AS BINARY) = CAST(? AS BINARY)',
                             [$upgraded['value'], $item['post_id'], $body]);
                         $update->execute();
                         if ($update->affected_rows === 1) {
@@ -945,7 +945,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $update = $this->createQuery();
         $update->add(
-            'UPDATE `redcap_config` SET `value` = ? WHERE `field_name` = ? AND `value` = ?',
+            'UPDATE `redcap_config` SET `value` = ? WHERE `field_name` = ? AND CAST(`value` AS BINARY) = CAST(? AS BINARY)',
             [$upgraded['value'], $fieldName, $oldValue]
         );
         $update->execute();
@@ -1285,7 +1285,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             $updateSql = 'UPDATE ' . $this->identifier($surface['table'])
                 . ' SET ' . implode(', ', $set)
                 . ' WHERE ' . $keyClause['sql']
-                . ' AND ' . $this->identifier($column) . ' = ?'
+                . ' AND CAST(' . $this->identifier($column) . ' AS BINARY) = CAST(? AS BINARY)'
                 . ' AND (' . $scope['sql'] . ')';
             $update = $this->createQuery();
             $update->add($updateSql, array_merge($parameters, $keyClause['params'], [$oldValue], $scope['params']));

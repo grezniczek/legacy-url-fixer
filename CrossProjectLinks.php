@@ -508,7 +508,7 @@ trait CrossProjectLinks
             $set[] = '`cache_content` = NULL';
         }
         $sql = 'UPDATE ' . $this->identifier($surface['table']) . ' SET ' . implode(', ', $set)
-            . ' WHERE ' . $keys['sql'] . ' AND ' . $this->identifier($column) . ' = ?'
+            . ' WHERE ' . $keys['sql'] . ' AND CAST(' . $this->identifier($column) . ' AS BINARY) = CAST(? AS BINARY)'
             . ' AND (' . $scope['sql'] . ')';
         $this->query('START TRANSACTION', []);
         try {

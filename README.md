@@ -1,5 +1,7 @@
 # Link Inspector & Repair
 
+**Version 1.0.0**
+
 Link Inspector & Repair (LIR) finds, repairs, and relocates REDCap image and file links. It repairs outdated document hashes in authored project configuration, selected Control Center settings, and REDCap Community Platform post bodies. Cross-project reports identify links to files owned by another project and let users copy those files into the project containing the link, optionally creating direct public File Repository links.
 
 Legacy-hash repairs require a verified e-document, owning project, and legacy hash. Cross-project relocation uses a separate, explicitly selected workflow that works regardless of hash. Links it cannot verify are listed for review.
