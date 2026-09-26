@@ -11,7 +11,8 @@ $projectPluginUrl = $module->getUrl('legacy-url-fixer.php');
 
 ?>
 <div class="legacy-url-fixer-control-center" style="max-width: 1100px">
-    <h4><i class="fas fa-search"></i> LIR: Scan legacy image/file URLs</h4>
+    <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
+    <h4 class="mb-1"><i class="fas fa-search"></i> Scan legacy image/file URLs</h4>
 
     <div id="legacy-url-cc-error" class="alert alert-danger" style="display:none" role="alert"></div>
 

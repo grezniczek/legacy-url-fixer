@@ -15,7 +15,8 @@ $publicSharingEnabled = ($GLOBALS['file_repository_allow_public_link'] ?? null) 
     }
 </style>
 <div class="legacy-cross-project-links">
-    <h4><i class="fas fa-exchange-alt"></i> LIR: Relocate cross-project file links</h4>
+    <p class="text-muted" style="font-size:.875rem;margin-bottom:5px"><em>Link Inspector &amp; Repair</em></p>
+    <h4 class="mb-1"><i class="fas fa-exchange-alt"></i> Relocate cross-project file links</h4>
     <p>
         This report finds image and download links in this project's authored configuration when the referenced file belongs
         to another project. It includes current, legacy, and mismatched hashes for supported URLs on this REDCap host. Only links to projects where you also have
