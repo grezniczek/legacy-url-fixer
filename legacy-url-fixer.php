@@ -1,12 +1,18 @@
 <?php
 
+namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
+
 use ExternalModules\ExternalModules;
+
+/** @var LegacyURLFixerExternalModule $module */
+
 
 ExternalModules::requireDesignRights();
 
 ?>
 <div class="legacy-url-fixer" style="max-width: 960px">
-    <h4><i class="fas fa-link"></i> Fix legacy image/file URLs</h4>
+    <p class="text-muted" style="font-size:.875rem;margin-bottom:-5px;"><em>Link Inspector &amp; Repair</em></p>
+    <div class="projhdr mb-1"><i class="fas fa-link"></i> Fix legacy image/file links</div>
 
     <?php if (isset($Proj->project['status']) && (int) $Proj->project['status'] > 0): ?>
         <div class="alert alert-info">
@@ -17,8 +23,8 @@ ExternalModules::requireDesignRights();
 
     <p>
         This scans authored project configuration for static <code>DataEntry/image_view.php</code>
-        and <code>DataEntry/file_download.php</code> URLs, including survey passthru URLs. It classifies
-        both legacy and current document hashes; only verified legacy URLs can be repaired. The scan is
+        and <code>DataEntry/file_download.php</code> links, including survey passthru links. It classifies
+        both legacy and current document hashes; only verified legacy links can be repaired. The scan is
         cached only as row locators and content fingerprints; it does not cache the text being scanned.
     </p>
 
@@ -38,7 +44,7 @@ ExternalModules::requireDesignRights();
             <i class="fas fa-list"></i> Show scan details
         </button>
         <button type="button" id="legacy-url-apply" class="btn btn-danger btn-sm" disabled>
-            <i class="fas fa-wrench"></i> Fix all scanned URLs
+            <i class="fas fa-wrench"></i> Fix all scanned links
         </button>
         <span id="legacy-url-progress" class="ms-2 text-muted" aria-live="polite"></span>
     </p>
@@ -202,15 +208,15 @@ ExternalModules::requireDesignRights();
             const stats = scan.stats;
             $stats.html(
                 stat('Cells to update', stats.changed_cells)
-                + stat('URLs to update', stats.changed_urls, true)
-                + stat('Valid current URLs', stats.current_urls)
-                + stat('Current cross-project URLs', stats.current_cross_project_urls || 0)
-                + stat('URLs needing review', stats.issues, true)
+                + stat('Links to update', stats.changed_urls, true)
+                + stat('Valid current links', stats.current_urls)
+                + stat('Current cross-project links', stats.current_cross_project_urls || 0)
+                + stat('Links needing review', stats.issues, true)
             );
             $repairPolicy.html(scan.allow_cross_project_edoc_repair
                 ? '<strong>Cross-project e-document repair is enabled for this scan.</strong> '
-                    + 'Verified legacy URLs may reference an e-document owned by another project; repaired numeric <code>pid</code> values are normalized to that owner.'
-                : 'Cross-project e-document repair is disabled. URLs referencing an e-document owned by another project require review.');
+                    + 'Verified legacy links may reference an e-document owned by another project; repaired numeric <code>pid</code> values are normalized to that owner.'
+                : 'Cross-project e-document repair is disabled. Links referencing an e-document owned by another project require review.');
 
             const rows = Object.keys(stats.surfaces).map(function (key) {
                 const surface = stats.surfaces[key];
@@ -221,9 +227,9 @@ ExternalModules::requireDesignRights();
                     + '<td class="text-end">' + escapeHtml(surface.current_cross_project_urls || 0) + '</td>'
                     + '<td class="text-end">' + escapeHtml(surface.issues) + '</td></tr>';
             });
-            $surfaces.html(rows.length === 0 ? '<span class="text-muted">No candidate URLs were found.</span>' :
+            $surfaces.html(rows.length === 0 ? '<span class="text-muted">No candidate links were found.</span>' :
                 '<table class="table table-sm mb-0"><thead><tr><th>Surface</th><th class="text-end">Cells</th>'
-                + '<th class="text-end">URLs to update</th><th class="text-end">Current</th>'
+                + '<th class="text-end">Links to update</th><th class="text-end">Current</th>'
                 + '<th class="text-end">Current cross-project</th><th class="text-end">Review</th></tr></thead><tbody>'
                 + rows.join('') + '</tbody></table>');
 
@@ -277,16 +283,16 @@ ExternalModules::requireDesignRights();
                 let contents = '';
                 if (detail.state === 'repair') {
                     action = '<span class="badge bg-success">Will update</span>';
-                    contents = urlPreview('Current URL', detail.url) + urlPreview('Replacement URL', detail.replacement);
+                    contents = urlPreview('Current link', detail.url) + urlPreview('Replacement link', detail.replacement);
                 } else if (detail.state === 'review') {
                     action = '<span class="badge bg-warning text-dark">Review</span>';
-                    contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported URL format') + '</div>'
-                        + urlPreview('Current URL', detail.url);
+                    contents = '<div class="mb-1">' + escapeHtml(detail.reason || 'Unsupported link format') + '</div>'
+                        + urlPreview('Current link', detail.url);
                 } else if (detail.state === 'current_cross_project') {
                     action = '<span class="badge bg-info text-dark">Cross-project</span>';
-                    contents = '<div class="mb-1">Current URL to a document in project PID '
+                    contents = '<div class="mb-1">Current link to a document in project PID '
                         + escapeHtml(detail.owner_project_id) + '. Review with the project owners.</div>'
-                        + urlPreview('Current URL', detail.url);
+                        + urlPreview('Current link', detail.url);
                 } else {
                     action = '<span class="badge bg-secondary">Refresh needed</span>';
                     contents = escapeHtml(detail.reason || 'The scanned item is no longer available.');
@@ -299,11 +305,11 @@ ExternalModules::requireDesignRights();
             if (rows.length) {
                 $detailsRows.append(rows.join(''));
             } else if (!append) {
-                $detailsRows.html('<tr><td colspan="3" class="text-muted">No URL details are available for this scan.</td></tr>');
+                $detailsRows.html('<tr><td colspan="3" class="text-muted">No link details are available for this scan.</td></tr>');
             }
 
             detailOffset = result.next_offset || 0;
-            let note = result.total_cells === 0 ? 'No URL details are available for this scan.'
+            let note = result.total_cells === 0 ? 'No link details are available for this scan.'
                 : 'Showing details for scanned cells ' + (result.offset + 1) + '–'
                     + Math.min(detailOffset, result.total_cells) + ' of ' + result.total_cells + '.';
             if (result.stale_cells) {
@@ -354,8 +360,8 @@ ExternalModules::requireDesignRights();
             try {
                 await LegacyUrlScanCsv.download({
                     filename: 'legacy-url-project-' + scanId.slice(0, 12) + '.csv',
-                    headers: ['Action', 'Surface', 'Table', 'Column', 'Row key', 'Current URL',
-                        'Replacement URL', 'Reason', 'Owner project ID'],
+                    headers: ['Action', 'Surface', 'Table', 'Column', 'Row key', 'Current link',
+                        'Replacement link', 'Reason', 'Owner project ID'],
                     fetchPage: function (offset) {
                         return module.ajax('details', {scan_id: scanId, offset: offset});
                     },
@@ -376,23 +382,23 @@ ExternalModules::requireDesignRights();
         });
         $apply.on('click', async function () {
             if (!currentScan || currentScan.stats.changed_cells === 0) return;
-            let confirmationMessage = 'Fix all URLs from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.';
+            let confirmationMessage = 'Fix all links from this scan? Cells changed since scanning will be skipped. A CSV audit is saved to the project File Repository.';
             if (currentScan.allow_cross_project_edoc_repair) {
                 confirmationMessage += ' This scan includes the enabled cross-project e-document repair policy.';
             }
             const confirmed = await confirmWithSimpleDialog(
                 confirmationMessage,
-                'Confirm URL repairs',
-                'Fix URLs'
+                'Confirm link repairs',
+                'Fix links'
             );
             if (!confirmed) return;
 
-            setBusy('Applying URL repairs…');
+            setBusy('Applying link repairs…');
             $detailsResult.hide();
             module.ajax('apply', {scan_id: currentScan.scan_id}).then(function (result) {
                 currentScan = null;
                 const counts = result.counts;
-                let message = 'Updated ' + counts.updated_urls + ' URL(s) in ' + counts.updated_cells + ' cell(s).';
+                let message = 'Updated ' + counts.updated_urls + ' link(s) in ' + counts.updated_cells + ' cell(s).';
                 if (counts.skipped_changed || counts.skipped_no_longer_needed || counts.errors) {
                     message += ' Skipped changed: ' + counts.skipped_changed + '; already resolved: '
                         + counts.skipped_no_longer_needed + '; errors: ' + counts.errors + '.';
@@ -405,11 +411,11 @@ ExternalModules::requireDesignRights();
                 const hasErrors = counts.errors > 0;
                 reloadWithToast(
                     hasErrors ? 'warning' : 'success',
-                    hasErrors ? 'URL fixes partially applied' : 'URL fixes applied',
+                    hasErrors ? 'Link fixes partially applied' : 'Link fixes applied',
                     message
                 );
             }).catch(function (error) {
-                reloadWithToast('error', 'Unable to apply URL fixes', errorMessage(error));
+                reloadWithToast('error', 'Unable to apply link fixes', errorMessage(error));
             });
         });
 

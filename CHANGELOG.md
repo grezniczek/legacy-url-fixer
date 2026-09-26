@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0
+
+- Renamed the module to **Link Inspector & Repair (LIR)**. Control Center and project menu links use **LIR •**, and pages show the module name above their heading. Existing module identifiers and settings are preserved.
+- Added a project report for cross-project image and download links, regardless of hash, with row selection and two actions: copy files into the project containing the link, or create direct public File Repository links for the copies.
+- Required Design rights in both the project containing the link and the file-owning project; permissions are checked again before relocation. Community Sites and record data are outside this report.
+- Added a separate, read-only Control Center inventory of affected projects, with cached per-surface scans, link counts, coverage timestamps, and links to project reports for repairs.
+- Added REDCap confirmation dialogs and uniform row-hover styling to the cross-project report.
+- Standardized user-facing wording on “links” in page text, settings, messages, CSV headings, and documentation.
+- Made final repair comparisons byte-exact so concurrent case-only or whitespace changes cannot be overlooked by case-insensitive database comparisons.
+- Added repeatable isolated regression checks for permission gates, production/Draft Mode handling, stale content, conditional writes, and scan ownership.
+
 ## 0.8.0
 
 - Added Community Site discovery and post-body scanning, details, and repair in a Control Center tab.

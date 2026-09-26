@@ -4,6 +4,8 @@ namespace DE\RUB\SEG\LegacyURLFixerExternalModule;
 
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/CrossProjectLinks.php';
+
 /**
  * Finds and repairs stored REDCap image/file URLs that use the pre-September
  * 2026 document hash algorithm.
@@ -14,6 +16,7 @@ use ExternalModules\ExternalModules;
  */
 class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModule
 {
+    use CrossProjectLinks;
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';
@@ -27,8 +30,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
     ];
     private const ALLOW_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'allow-cross-project-edoc-repair';
     private const FORCE_CROSS_PROJECT_EDOC_REPAIR_SETTING = 'force-cross-project-edoc-repair';
-    private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary URL';
-    private const DRAFT_CHANGES_PENDING_REASON = 'Repair the draft copy if needed, then apply Draft Mode changes to update this active URL';
+    private const DRAFT_MODE_REQUIRED_REASON = 'Enter Draft Mode to repair this data dictionary link';
+    private const DRAFT_CHANGES_PENDING_REASON = 'Repair the draft copy if needed, then apply Draft Mode changes to update this active link';
     private const MAX_SCAN_CACHE_BYTES = 14000000;
     private const DETAIL_PAGE_SIZE = 50;
     private const DATA_DICTIONARY_COLUMNS = [
@@ -88,6 +91,8 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         if (in_array($action, [
             'control-center-scan',
             'control-center-status',
+            'cross-project-control-center-status',
+            'cross-project-control-center-scan',
             'control-center-settings-scan',
             'control-center-settings-details',
             'control-center-settings-apply',
@@ -97,6 +102,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             'community-apply',
         ], true)) {
             $this->requireControlCenterAccess();
+            if ($action === 'cross-project-control-center-status') {
+                return $this->getCrossProjectControlCenterStatus();
+            }
+            if ($action === 'cross-project-control-center-scan') {
+                return $this->scanCrossProjectControlCenterSurface(
+                    is_array($payload) ? ($payload['surface_id'] ?? null) : null
+                );
+            }
             if ($action === 'community-status') {
                 return $this->getCommunityScanSummary();
             }
@@ -151,6 +164,14 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->runScan($project);
         }
 
+        if ($action === 'cross-project-scan') {
+            return $this->scanCrossProjectLinks($project);
+        }
+
+        if ($action === 'cross-project-apply') {
+            return $this->applyCrossProjectLinks($project, is_array($payload) ? $payload : []);
+        }
+
         if ($action === 'status') {
             return $this->getCachedScanSummary($projectId);
         }
@@ -166,7 +187,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->applyCachedScan($project, $requestedScanId);
         }
 
-        throw new \Exception('Unsupported Legacy URL Fixer action.');
+        throw new \Exception('Unsupported Link Inspector & Repair action.');
     }
 
     private function requireControlCenterAccess(): void
@@ -615,7 +636,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
                     } else {
                         $update = $this->createQuery();
                         $update->add('UPDATE ' . $this->identifier($site['table'])
-                            . ' SET body = ? WHERE post_id = ? AND body = ?',
+                            . ' SET body = ? WHERE post_id = ? AND CAST(body AS BINARY) = CAST(? AS BINARY)',
                             [$upgraded['value'], $item['post_id'], $body]);
                         $update->execute();
                         if ($update->affected_rows === 1) {
@@ -636,7 +657,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
             $outcomes[] = $outcome;
         }
-        $this->log('Community Site legacy URL repair batch completed', [
+        $this->log('Community Site legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -884,7 +905,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
         }
 
-        $this->log('Control Center legacy URL repair batch completed', [
+        $this->log('Control Center legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -924,7 +945,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         $update = $this->createQuery();
         $update->add(
-            'UPDATE `redcap_config` SET `value` = ? WHERE `field_name` = ? AND `value` = ?',
+            'UPDATE `redcap_config` SET `value` = ? WHERE `field_name` = ? AND CAST(`value` AS BINARY) = CAST(? AS BINARY)',
             [$upgraded['value'], $fieldName, $oldValue]
         );
         $update->execute();
@@ -1167,7 +1188,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         }
 
         $audit = $this->saveAuditFile($projectId, $scan, $outcomes);
-        $this->log('Legacy URL repair batch completed', [
+        $this->log('Legacy link repair batch completed', [
             'scan_id' => substr($scan['id'], 0, 16),
             'updated_cells' => $counts['updated_cells'],
             'updated_urls' => $counts['updated_urls'],
@@ -1264,7 +1285,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             $updateSql = 'UPDATE ' . $this->identifier($surface['table'])
                 . ' SET ' . implode(', ', $set)
                 . ' WHERE ' . $keyClause['sql']
-                . ' AND ' . $this->identifier($column) . ' = ?'
+                . ' AND CAST(' . $this->identifier($column) . ' AS BINARY) = CAST(? AS BINARY)'
                 . ' AND (' . $scope['sql'] . ')';
             $update = $this->createQuery();
             $update->add($updateSql, array_merge($parameters, $keyClause['params'], [$oldValue], $scope['params']));
@@ -1329,7 +1350,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             }
             if ($urlResult['state'] === 'issue') {
                 $result['issues']++;
-                $reason = $urlResult['reason'] ?? 'Unsupported URL format';
+                $reason = $urlResult['reason'] ?? 'Unsupported link format';
                 $result['issues_by_reason'][$reason] = ($result['issues_by_reason'][$reason] ?? 0) + 1;
                 $result['matches'][] = [
                     'state' => 'review',
@@ -1363,10 +1384,10 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $url = trim(html_entity_decode($originalUrl, ENT_QUOTES | ENT_HTML5));
         $parts = parse_url($url);
         if ($parts === false || !isset($parts['query'])) {
-            return ['state' => 'issue', 'reason' => 'The URL cannot be parsed or has no query string'];
+            return ['state' => 'issue', 'reason' => 'The link cannot be parsed or has no query string'];
         }
         if (!$this->isConfiguredRedcapHost($parts)) {
-            return ['state' => 'issue', 'reason' => 'The URL points to a different REDCap host'];
+            return ['state' => 'issue', 'reason' => 'The link points to a different REDCap host'];
         }
 
         parse_str($parts['query'], $parameters);
@@ -1389,7 +1410,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
         $isImage = $this->endsWith($path, 'DataEntry/image_view.php') || $passthru === 'DataEntry/image_view.php';
         $isDownload = $this->endsWith($path, 'DataEntry/file_download.php') || $passthru === 'DataEntry/file_download.php';
         if (!$isImage && !$isDownload) {
-            return ['state' => 'issue', 'reason' => 'The URL is not a supported image or file endpoint'];
+            return ['state' => 'issue', 'reason' => 'The link is not a supported image or file endpoint'];
         }
 
         $document = $this->getDocument($docId);
@@ -1451,7 +1472,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
             return $this->documentCache[$documentKey];
         }
 
-        $sql = 'SELECT e.doc_id, e.project_id, p.__SALT__'
+        $sql = 'SELECT e.doc_id, e.project_id, e.doc_name, e.delete_date, e.date_deleted_server, p.__SALT__, p.project_id AS owner_project_exists, p.date_deleted AS project_deleted'
             . ' FROM redcap_edocs_metadata e'
             . ' LEFT JOIN redcap_projects p ON p.project_id = e.project_id'
             . ' WHERE e.doc_id = ?';
@@ -2076,7 +2097,7 @@ class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModu
 
         try {
             $docId = $this->saveFile($path, $projectId);
-            if (!is_numeric($docId) || !\REDCap::addFileToRepository((int) $docId, $projectId, 'Legacy URL Fixer batch audit')) {
+            if (!is_numeric($docId) || !\REDCap::addFileToRepository((int) $docId, $projectId, 'Link Inspector & Repair batch audit')) {
                 return ['doc_id' => null, 'error' => 'The audit file could not be saved to the File Repository.'];
             }
             return ['doc_id' => (int) $docId, 'error' => null];
