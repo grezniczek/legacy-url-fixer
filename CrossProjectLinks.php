@@ -7,10 +7,6 @@ use ExternalModules\ExternalModules;
 /** Project-only, URL-level inventory and selected-link relocation. */
 trait CrossProjectLinks
 {
-    private const CROSS_PROJECT_SCAN_KEY = 'cross-project-links-scan';
-    private const CROSS_PROJECT_BATCH_LIMIT = 100;
-    private const CROSS_PROJECT_CC_CACHE_PREFIX = 'cross-project-control-center-';
-
     /** Read-only inventory; never populates or changes a project's repair cache. */
     private function scanCrossProjectControlCenterSurface($surfaceId): array
     {

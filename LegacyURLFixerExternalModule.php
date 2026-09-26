@@ -17,6 +17,9 @@ require_once __DIR__ . '/CrossProjectLinks.php';
 class LegacyURLFixerExternalModule extends \ExternalModules\AbstractExternalModule
 {
     use CrossProjectLinks;
+    private const CROSS_PROJECT_SCAN_KEY = 'cross-project-links-scan';
+    private const CROSS_PROJECT_BATCH_LIMIT = 100;
+    private const CROSS_PROJECT_CC_CACHE_PREFIX = 'cross-project-control-center-';
     private const SCAN_CACHE_KEY = 'scan-cache';
     private const CONTROL_CENTER_SCAN_CACHE_PREFIX = 'control-center-scan-';
     private const CONTROL_CENTER_SETTINGS_SCAN_CACHE_KEY = 'control-center-settings-scan';

@@ -21,4 +21,6 @@ The checks cover:
 
 Framework permission results and query outcomes are supplied by fixtures. These checks validate how the module responds to them; they do not replace browser checks with actual accounts, database transaction integration tests, or file-storage tests.
 
+The 58 isolated checks and PHP syntax checks pass on PHP 8.1; the isolated checks also pass on PHP 8.5.
+
 For 1.0.0, the user has confirmed both replacement modes and the Control Center inventory in the local instance. The release review additionally verified, through read-only `redcap_devctl` queries, that the content column uses a case-insensitive collation and that binary comparison distinguishes case-only changes. Ordinary-user browser sessions were not exercised by this script.
